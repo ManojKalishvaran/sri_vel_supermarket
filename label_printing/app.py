@@ -31,9 +31,9 @@ FONTS = {
 }
 
 # If you have TTF fonts, uncomment & point to them:
-FONTS["bold"] = ImageFont.truetype("D:\Bill priting\SUPERMARKET-MANAGEMENT\Final_APIs\label_printing\static\Inter_24pt-Bold.ttf", 24)
-FONTS["regular"] = ImageFont.truetype("D:\Bill priting\SUPERMARKET-MANAGEMENT\Final_APIs\label_printing\static\Inter_18pt-Regular.ttf", 18)
-FONTS["tiny"] = ImageFont.truetype("D:\Bill priting\SUPERMARKET-MANAGEMENT\Final_APIs\label_printing\static\Inter_18pt-Regular.ttf", 16)
+FONTS["bold"] = ImageFont.truetype("label_printing\static\Inter_24pt-Bold.ttf", 24)
+FONTS["regular"] = ImageFont.truetype("label_printing\static\Inter_18pt-Regular.ttf", 18)
+FONTS["tiny"] = ImageFont.truetype("label_printing\static\Inter_18pt-Regular.ttf", 16)
 
 # ---------- App ----------
 app = Flask(__name__)

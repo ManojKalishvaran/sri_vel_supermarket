@@ -280,7 +280,7 @@ def generate_bill_string(bill_data, customer_data, items_data):
 
     bill_string = f"""
 {SEP}
-      EM.PE.EM SUPER MARKET
+      SRI VELAVAN SUPERMARKET
 {SEP}
     2/136A, Pillaiyar Koil Street,
    A.Kottarakuppam, Virudhachalam
