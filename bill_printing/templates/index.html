@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SHRI VELAVAN SUPER MARKET - Billing system</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.2em;
+            margin-bottom: 5px;
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .main-content {
+            padding: 25px;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 25px;
+            background: linear-gradient(312deg, #cdcdcd, #7b898b00);
+        }
+
+        .form-section {
+            background: linear-gradient(45deg, #9ce8ff, transparent);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .form-section h2 {
+            color: #2d3748;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            color: #4a5568;
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 15px;
+            transition: all 0.2s ease;
+            background: white;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-group input {
+            flex: 1;
+        }
+
+        .input-group select {
+            width: 80px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            margin: 3px;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #f39c12 0%, #d35400 100%);
+        }
+
+        .customer-info {
+            background: #e8f4fc;
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 4px solid #3498db;
+            margin-bottom: 15px;
+        }
+
+        .balance-section {
+            background: #fef9e7;
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 4px solid #f39c12;
+            margin-top: 12px;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .items-table th,
+        .items-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 14px;
+        }
+
+        .items-table th {
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            color: white;
+            font-weight: 600;
+        }
+
+        .items-table tr:hover {
+            background: #f7fafc;
+        }
+
+        .totals {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .totals h3 {
+            color: #2c3e50;
+            margin-bottom: 12px;
+            font-size: 1.1em;
+        }
+
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .bill-output {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow-y: auto;
+            margin-top: 15px;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        .two-column {
+            grid-column: span 2;
+        }
+
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+        }
+
+        .alert-success {
+            background: #d5f5e3;
+            color: #27ae60;
+            border: 1px solid #a3e4d7;
+        }
+
+        .alert-error {
+            background: #000000;
+            color: #e74c3c;
+            border: 1px solid #f5b7b1;
+        }
+
+        .alert-icon {
+            margin-right: 10px;
+            font-size: 18px;
+        }
+
+        #alerts {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            width: auto;
+            max-width: 90%;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 15px;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .product-suggestions {
+            position: absolute;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            width: calc(100% - 20px);
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 100;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            display: none;
+        }
+
+        .highlight-total {
+            font-weight: bold;
+            color: #000;
+        }
+
+        .product-suggestion {
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .product-suggestion:hover {
+            background: #f7fafc;
+        }
+
+        .product-input-container {
+            position: relative;
+        }
+
+        .barcode-input {
+            background: #ffe6e6 !important;
+            border: 2px solid #ff4444 !important;
+            font-weight: bold;
+        }
+
+        @media (max-width: 1200px) {
+            .main-content {
+                grid-template-columns: 1fr 1fr;
+                gap: 20px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+            
+            .header h1 {
+                font-size: 1.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>SHRI VELAVAN SUPER MARKET</h1>
+            <p>Billing System</p>
+        </div>
+
+        <div id="alerts"></div>
+
+        <div class="main-content">
+            <!-- Customer Details Section -->
+            <div class="form-section" style="grid-column: span 2;">
+                <h2>வாடிக்கையாளர் விவரங்கள்</h2>
+                
+                <div class="form-group">
+                    <label for="customerMobile">மொபைல் எண்:</label>
+                    <input type="tel" id="customerMobile" placeholder="மொபைல் எண் உள்ளிடவும்" maxlength="10">
+                    <button type="button" class="btn btn-secondary" onclick="searchCustomer()">தேடு</button>
+                </div>
+
+                <div id="customerInfo" class="customer-info" style="display: none;">
+                    <h4>வாடிக்கையாளர் தகவல்:</h4>
+                    <p><strong>பெயர்:</strong> <span id="customerName"></span></p>
+                    <p><strong>முகவரி:</strong> <span id="customerAddress"></span></p>
+                    <p><strong>புள்ளிகள்:</strong> <span id="customerPoints"></span></p>
+                    <p><strong>கடன் இருப்பு:</strong> ₹<span id="customerBalance"></span></p>
+                </div>
+
+                <div class="form-group">
+                    <label for="newCustomerName">பெயர்:</label>
+                    <input type="text" id="newCustomerName" placeholder="வாடிக்கையாளர் பெயர்">
+                </div>
+
+                <div class="form-group">
+                    <label for="newCustomerAddress">முகவரி:</label>
+                    <textarea id="newCustomerAddress" rows="2" placeholder="முகவரி"></textarea>
+                </div>
+
+                <!-- Balance Management Section -->
+                <div class="balance-section">
+                    <h4>கடன் இருப்பு நிர்வாகம்:</h4>
+                    <div class="form-group">
+                        <label for="oldBalance">பழைய கடன் இருப்பு (₹):</label>
+                        <input type="number" id="oldBalance" placeholder="0.00" step="0.01" readonly>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="newDebt">புதிய கடன் (₹):</label>
+                        <input type="number" id="newDebt" placeholder="0.00" step="0.01" value="0">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="settleDebt">கடன் தீர்க்க (₹):</label>
+                        <input type="number" id="settleDebt" placeholder="0.00" step="0.01" value="0">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="updatedBalance">புத்ுப்பிக்கப்பட்ட இருப்பு (₹):</label>
+                        <input type="number" id="updatedBalance" placeholder="0.00" step="0.01" readonly>
+                    </div>
+                    
+                    <button type="button" class="btn btn-warning" onclick="updateBalance()">இருப்பு மாற்று</button>
+                </div>
+            </div>
+
+            <!-- Product Details Section -->
+            <div class="form-section">
+                <h2>பொருள் விவரங்கள்</h2>
+                
+                <div class="form-group">
+                    <label for="barcodeInput" style="color: red; font-weight: bold;">பார்கோட் ஸ்கேன் செய்யவும்:</label>
+                    <input type="text" id="barcodeInput" class="barcode-input" placeholder="பார்கோட் ஸ்கேன் செய்யவும்" autofocus>
+                </div>
+                
+                <div class="form-group product-input-container">
+                    <label for="productName">பொருளின் பெயர்:</label>
+                    <input type="text" id="productName" placeholder="பொருளின் பெயர்" autocomplete="off">
+                    <div id="productSuggestions" class="product-suggestions"></div>
+                </div>
+
+                <div class="form-group input-group">
+                    <div style="flex: 1;">
+                        <label for="quantity">அளவு:</label>
+                        <input type="number" id="quantity" placeholder="அளவு" min="1">
+                    </div>
+                    <div>
+                        <label for="unit">அலகு</label>
+                        <select id="unit">
+                            <option value="kg">கிலோ</option>
+                            <option value="g">கிராம்</option>
+                            <option value="l">லிட்டர்</option>
+                            <option value="count">எண்ணிக்கை</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="mrp">எம்.ஆர்.பி (₹):</label>
+                    <input type="number" id="mrp" placeholder="எம்.ஆர்.பி" step="0.01" min="0">
+                </div>
+
+                <div class="form-group">
+                    <label for="retailPrice">விற்பனை விலை (₹):</label>
+                    <input type="number" id="retailPrice" placeholder="விற்பனை விலை" step="0.01" min="0">
+                </div>
+
+                <button type="button" class="btn btn-secondary" onclick="addItem()">பொருள் சேர்க்க</button>
+            </div>
+
+            <!-- Items Table -->
+            <div class="form-section full-width">
+                <h2>பொருள் பட்டியல்</h2>
+                <table class="items-table">
+                    <thead>
+                        <tr>
+                            <th>பொருளின் பெயர்</th>
+                            <th>அளவு</th>
+                            <th>எம்.ஆர்.பி</th>
+                            <th>விற்பனை விலை</th>
+                            <th>மொத்தம்</th>
+                            <th>சேமிப்பு</th>
+                            <th>செயல்</th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemsTableBody">
+                        <!-- Items will be added here -->
+                    </tbody>
+                </table>
+
+                <div class="totals">
+                    <h3>மொத்த விவரங்கள்</h3>
+                    <div class="total-row">
+                        <span>மொத்த பொருட்கள்:</span>
+                        <span id="totalUniqueProducts">0</span>
+                    </div>
+                    <div class="total-row">
+                        <span>மொத்த எண்ணிக்கை:</span>
+                        <span id="totalItems">0</span>
+                    </div>
+                    <div class="total-row highlight-total">
+                        <span>மொத்த தொகை:</span>
+                        <span>₹<span id="subtotal">0.00</span></span>
+                    </div>
+                    <div class="total-row">
+                        <span>மொத்த சேமிப்பு:</span>
+                        <span>₹<span id="totalSavings">0.00</span></span>
+                    </div>
+                    <div class="total-row">
+                        <span>சம்பாதித்த புள்ளிகள்:</span>
+                        <span id="pointsEarned">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Payment Section -->
+            <div class="form-section">
+                <h2>பணம் செலுத்தும் முறை</h2>
+                
+                <div class="form-group">
+                    <label for="paymentType">பணம் செலுத்தும் முறை:</label>
+                    <select id="paymentType">
+                        <option value="பணம்">பணம்</option>
+                        <option value="கார்டு">கார்டு</option>
+                        <option value="UPI">UPI</option>
+                        <option value="கடன்">கடன்</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="cashReceived">பெற்ற பணம் (₹):</label>
+                    <input type="number" id="cashReceived" placeholder="பெற்ற பணம்" step="0.01" min="0">
+                </div>
+
+                <div class="form-group">
+                    <label for="cashBalance">திரும்ப கொடுத்த பணம் (₹):</label>
+                    <input type="number" id="cashBalance" placeholder="திரும்ப கொடுத்த பணம்" step="0.01" min="0">
+                </div>
+
+                <button type="button" class="btn" onclick="generateBill()">பில் உருவாக்க</button>
+            </div>
+
+            <!-- Bill Output Section -->
+            <div class="form-section two-column">
+                <h2>பில் முன்னோட்டம்</h2>
+                <div id="billOutput" class="bill-output">
+                    பில் இங்கே காண்பிக்கப்படும்...
+                </div>
+                <button type="button" class="btn btn-secondary" onclick="printBill()" style="display: none;" id="printBtn">பிரிண்ட் செய்</button>
+                <button type="button" class="btn btn-warning" onclick="resetForm()">படிவம் மீட்டமைக்க</button>
+            </div>
+        </div>
+
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>பதிவு செய்யப்படுகிறது...</p>
+        </div>
+    </div>
+
+    <script>
+        let items = [];
+        let currentCustomer = null;
+        let productList = [];
+
+        // Load product list from server
+        function loadProductList() {
+            fetch('/get_products')
+                .then(response => response.json())
+                .then(data => {
+                    productList = data.products;
+                })
+                .catch(error => {
+                    console.error('Error loading product list:', error);
+                });
+        }
+
+        // Show product suggestions
+        function showProductSuggestions() {
+            const input = document.getElementById('productName').value.toLowerCase();
+            const suggestionsContainer = document.getElementById('productSuggestions');
+            
+            if (!input) {
+                suggestionsContainer.style.display = 'none';
+                return;
+            }
+            
+            const filtered = productList.filter(product => 
+                product.toLowerCase().includes(input)
+            );
+            
+            if (filtered.length === 0) {
+                suggestionsContainer.style.display = 'none';
+                return;
+            }
+            
+            suggestionsContainer.innerHTML = filtered.map(product => 
+                `<div class="product-suggestion" onclick="selectProduct('${product}')">${product}</div>`
+            ).join('');
+            
+            suggestionsContainer.style.display = 'block';
+        }
+
+        // Select product from suggestions and auto-fill details
+        function selectProduct(product) {
+            document.getElementById('productName').value = product;
+            document.getElementById('productSuggestions').style.display = 'none';
+            
+            // Try to get product details from database
+            fetch(`/get_product_by_name/${encodeURIComponent(product)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        fillProductDetails(data.product);
+                    }
+                    document.getElementById('quantity').focus();
+                })
+                .catch(error => {
+                    console.error('Error fetching product details:', error);
+                    document.getElementById('quantity').focus();
+                });
+        }
+
+        // Fill product details from database
+        function fillProductDetails(product) {
+            document.getElementById('mrp').value = product.mrp.toFixed(2);
+            document.getElementById('retailPrice').value = product.retail_price.toFixed(2);
+            
+            // Set appropriate unit based on measure
+            const measureUnit = product.measure.toLowerCase();
+            const unitSelect = document.getElementById('unit');
+            if (measureUnit.includes('kg') || measureUnit.includes('கிலோ')) {
+                unitSelect.value = 'kg';
+            } else if (measureUnit.includes('g') || measureUnit.includes('கிராம்')) {
+                unitSelect.value = 'g';
+            } else if (measureUnit.includes('l') || measureUnit.includes('லிட்டர்')) {
+                unitSelect.value = 'l';
+            } else {
+                unitSelect.value = 'count';
+            }
+        }
+
+        // Hide suggestions when clicking outside
+        document.addEventListener('click', function(e) {
+            if (e.target.id !== 'productName') {
+                document.getElementById('productSuggestions').style.display = 'none';
+            }
+        });
+
+        function showAlert(message, type = 'success') {
+            const alertsContainer = document.getElementById('alerts');
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.innerHTML = `
+                <span class="alert-icon">${type === 'success' ? '✓' : '✗'}</span>
+                ${message}
+            `;
+            alertsContainer.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        }
+
+        function searchCustomer() {
+            const mobile = document.getElementById('customerMobile').value.trim();
+            if (!mobile) {
+                showAlert('மொபைல் எண் உள்ளிடவும்', 'error');
+                return;
+            }
+
+            fetch(`/get_customer/${mobile}`)
+                .then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    } else {
+                        throw new Error('Customer not found');
+                    }
+                })
+                .then(data => {
+                    currentCustomer = data;
+                    document.getElementById('customerName').textContent = data.name;
+                    document.getElementById('customerAddress').textContent = data.address;
+                    document.getElementById('customerPoints').textContent = data.points;
+                    document.getElementById('customerBalance').textContent = data.balance.toFixed(2);
+                    document.getElementById('customerInfo').style.display = 'block';
+                    
+                    document.getElementById('newCustomerName').value = data.name;
+                    document.getElementById('newCustomerAddress').value = data.address;
+                    document.getElementById('oldBalance').value = data.balance.toFixed(2);
+                    document.getElementById('updatedBalance').value = data.balance.toFixed(2);
+                    
+                    // Focus on barcode input after customer is found
+                    document.getElementById('barcodeInput').focus();
+                })
+                .catch(error => {
+                    document.getElementById('customerInfo').style.display = 'none';
+                    currentCustomer = null;
+                    document.getElementById('oldBalance').value = '0.00';
+                    document.getElementById('updatedBalance').value = '0.00';
+                    showAlert('வாடிக்கையாளர் காணப்படவில்லை. பெயர் மற்றும் முகவரி உள்ளிட்டு புதிய கணக்கு உருவாக்கவும்.', 'error');
+                    
+                    // Focus on name field for new customer
+                    document.getElementById('newCustomerName').focus();
+                });
+        }
+
+        function updateBalance() {
+            const mobile = document.getElementById('customerMobile').value.trim();
+            const oldBalance = parseFloat(document.getElementById('oldBalance').value) || 0;
+            const newDebt = parseFloat(document.getElementById('newDebt').value) || 0;
+            const settleDebt = parseFloat(document.getElementById('settleDebt').value) || 0;
+            const updatedBalance = oldBalance + newDebt - settleDebt;
+
+            if (!mobile) {
+                showAlert('முதலில் வாடிக்கையாளரை தேடவும்', 'error');
+                return;
+            }
+
+            const updateData = {
+                mobile: mobile,
+                balance: updatedBalance
+            };
+
+            fetch('/update_balance', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(updateData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('customerBalance').textContent = data.customer.balance.toFixed(2);
+                    document.getElementById('updatedBalance').value = data.customer.balance.toFixed(2);
+                    currentCustomer = data.customer;
+                    showAlert('கடன் இருப்பு வெற்றிகரமாக புத்துப்பிக்கப்பட்டது');
+                } else {
+                    showAlert('இருப்பு புத்துப்பிப்பதில் பிழை: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                showAlert('இருப்பு புத்துப்பிப்பதில் பிழை: ' + error.message, 'error');
+            });
+        }
+
+        function addItem() {
+            const name = document.getElementById('productName').value.trim();
+            const quantity = parseInt(document.getElementById('quantity').value);
+            const unit = document.getElementById('unit').value;
+            const mrp = parseFloat(document.getElementById('mrp').value);
+            const retailPrice = parseFloat(document.getElementById('retailPrice').value);
+
+            if (!name || !quantity || !mrp || !retailPrice) {
+                showAlert('அனைத்து பொருள் விவரங்களையும் உள்ளிடவும்', 'error');
+                return;
+            }
+
+            if (quantity <= 0) {
+                showAlert('அளவு 0 க்கு விட அதிகமாக இருக்க வேண்டும்', 'error');
+                return;
+            }
+
+            if (retailPrice > mrp) {
+                showAlert('விற்பனை விலை எம்.ஆர்.பி.யை விட அதிகமாக இருக்க முடியாது', 'error');
+                return;
+            }
+
+            // Check if item already exists and update quantity
+            const existingItemIndex = items.findIndex(item => 
+                item.name === name && item.unit === unit && 
+                item.mrp === mrp && item.retail_price === retailPrice
+            );
+
+            if (existingItemIndex !== -1) {
+                // Update existing item
+                items[existingItemIndex].quantity += quantity;
+                items[existingItemIndex].total = items[existingItemIndex].retail_price * items[existingItemIndex].quantity;
+                showAlert('பொருள் அளவு புத்துப்பிக்கப்பட்டது');
+            } else {
+                // Add new item
+                const item = {
+                    name: name,
+                    quantity: quantity,
+                    unit: unit,
+                    mrp: mrp,
+                    retail_price: retailPrice,
+                    total: retailPrice * quantity
+                };
+                items.push(item);
+                showAlert('பொருள் சேர்க்கப்பட்டது');
+            }
+
+            updateItemsTable();
+            clearProductForm();
+        }
+
+        function removeItem(index) {
+            items.splice(index, 1);
+            updateItemsTable();
+            showAlert('பொருள் நீக்கப்பட்டது');
+        }
+
+        function updateItemsTable() {
+            const tbody = document.getElementById('itemsTableBody');
+            tbody.innerHTML = '';
+
+            let totalItems = 0;
+            let subtotal = 0;
+            let totalSavings = 0;
+
+            items.forEach((item, index) => {
+                const row = tbody.insertRow();
+                const savings = (item.mrp - item.retail_price) * item.quantity;
+                
+                row.innerHTML = `
+                    <td>${item.name}</td>
+                    <td>${item.quantity} ${item.unit}</td>
+                    <td>₹${item.mrp.toFixed(2)}</td>
+                    <td>₹${item.retail_price.toFixed(2)}</td>
+                    <td>₹${item.total.toFixed(2)}</td>
+                    <td>₹${savings.toFixed(2)}</td>
+                    <td><button class="btn btn-danger" onclick="removeItem(${index})">நீக்கு</button></td>
+                `;
+
+                totalItems += item.quantity;
+                subtotal += item.total;
+                totalSavings += savings;
+            });
+
+            document.getElementById('totalUniqueProducts').textContent = items.length;
+            document.getElementById('totalItems').textContent = totalItems;
+            document.getElementById('subtotal').textContent = subtotal.toFixed(2);
+            document.getElementById('totalSavings').textContent = totalSavings.toFixed(2);
+            document.getElementById('pointsEarned').textContent = Math.floor(subtotal / 100);
+
+            // Auto-calculate cash balance when payment amount changes
+            calculateCashBalance();
+        }
+
+        function calculateCashBalance() {
+            const subtotal = parseFloat(document.getElementById('subtotal').textContent) || 0;
+            const cashReceived = parseFloat(document.getElementById('cashReceived').value) || 0;
+            const cashBalance = cashReceived - subtotal;
+            
+            if (cashReceived > 0) {
+                document.getElementById('cashBalance').value = cashBalance.toFixed(2);
+            }
+        }
+
+        function clearProductForm() {
+            document.getElementById('productName').value = '';
+            document.getElementById('quantity').value = '';
+            document.getElementById('mrp').value = '';
+            document.getElementById('retailPrice').value = '';
+            document.getElementById('barcodeInput').focus();
+        }
+
+        function generateBill() {
+            const mobile = document.getElementById('customerMobile').value.trim();
+            const name = document.getElementById('newCustomerName').value.trim();
+            const address = document.getElementById('newCustomerAddress').value.trim();
+            const paymentType = document.getElementById('paymentType').value;
+            const cashReceived = document.getElementById('cashReceived').value;
+            const cashBalance = document.getElementById('cashBalance').value;
+            
+            const oldBalance = parseFloat(document.getElementById('oldBalance').value) || 0;
+            const newDebt = parseFloat(document.getElementById('newDebt').value) || 0;
+            const settleDebt = parseFloat(document.getElementById('settleDebt').value) || 0;
+
+            if (mobile && (!name || !address)) {
+                showAlert('மொபைல் எண் கொடுக்கப்பட்டால், பெயரும் முகவரியும் தேவையாகும்', 'error');
+                return;
+            }
+
+            if (items.length === 0) {
+                showAlert('குறைந்தது ஒரு பொருளாவது சேர்க்கவும்', 'error');
+                return;
+            }
+
+            const billData = {
+                customer: {
+                    mobile: mobile,
+                    name: name || 'பதிவில்லா வாடிக்கையாளர்',
+                    address: address || '-'
+                },
+                items: items,
+                payment: {
+                    payment_type: paymentType,
+                    cash_received: cashReceived || 0,
+                    cash_balance: cashBalance || 0
+                },
+                balance: {
+                    old_balance: oldBalance,
+                    new_debt: newDebt,
+                    settle_debt: settleDebt
+                }
+            };
+
+            document.getElementById('loading').style.display = 'block';
+
+            fetch('/create_bill', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(billData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('loading').style.display = 'none';
+                
+                if (data.success) {
+                    document.getElementById('billOutput').textContent = data.bill_string;
+                    document.getElementById('printBtn').style.display = 'inline-block';
+                    showAlert(`பில் வெற்றிகரமாக உருவாக்கப்பட்டது! பில் எண்: ${data.bill_number}`);
+                    
+                    if (data.customer_data && data.customer_data.mobile !== 'N/A') {
+                        document.getElementById('customerName').textContent = data.customer_data.name;
+                        document.getElementById('customerAddress').textContent = data.customer_data.address;
+                        document.getElementById('customerPoints').textContent = data.customer_data.points;
+                        document.getElementById('customerBalance').textContent = data.customer_data.balance.toFixed(2);
+                        document.getElementById('customerInfo').style.display = 'block';
+                        document.getElementById('oldBalance').value = data.customer_data.balance.toFixed(2);
+                        document.getElementById('updatedBalance').value = data.customer_data.balance.toFixed(2);
+                        currentCustomer = data.customer_data;
+                    }
+                } else {
+                    showAlert('பில் உருவாக்குவதில் பிழை: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                document.getElementById('loading').style.display = 'none';
+                showAlert('பில் உருவாக்குவதில் பிழை: ' + error.message, 'error');
+            });
+        }
+
+        function printBill() {
+            const billContent = document.getElementById('billOutput').textContent;
+            if (!billContent || billContent === 'பில் இங்கே காண்பிக்கப்படும்...') {
+                showAlert('முதலில் பில் உருவாக்கவும்', 'error');
+                return;
+            }
+
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>பில் பிரிண்ட்</title>
+                    <style>
+                        body {
+                            font-family: 'Courier New', monospace;
+                            font-size: 10px;
+                            line-height: 1.3;
+                            white-space: pre-wrap;
+                            margin: 0;
+                            padding: 5mm;
+                            width: 80mm;
+                        }
+                        @media print {
+                            body { 
+                                margin: 0; 
+                                padding: 0;
+                                font-size: 9px;
+                            }
+                        }
+                    </style>
+                </head>
+                <body>${billContent}</body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.print();
+            
+            showAlert('பில் பிரிண்ட் செய்ய அனுப்பப்பட்டது');
+        }
+
+        function resetForm() {
+            if (!confirm('படிவத்தை மீட்டமைக்க விரும்புகிறீர்களா?')) {
+                return;
+            }
+
+            document.getElementById('customerMobile').value = '';
+            document.getElementById('newCustomerName').value = '';
+            document.getElementById('newCustomerAddress').value = '';
+            document.getElementById('oldBalance').value = '';
+            document.getElementById('newDebt').value = '0';
+            document.getElementById('settleDebt').value = '0';
+            document.getElementById('updatedBalance').value = '';
+            document.getElementById('paymentType').value = 'பணம்';
+            document.getElementById('cashReceived').value = '';
+            document.getElementById('cashBalance').value = '';
+            
+            document.getElementById('customerInfo').style.display = 'none';
+            document.getElementById('billOutput').textContent = 'பில் இங்கே காண்பிக்கப்படும்...';
+            document.getElementById('printBtn').style.display = 'none';
+            
+            items = [];
+            currentCustomer = null;
+            updateItemsTable();
+            clearProductForm();
+            
+            showAlert('படிவம் மீட்டமைக்கப்பட்டது');
+            
+            // Focus on customer mobile for next transaction
+            document.getElementById('customerMobile').focus();
+        }
+
+        // Enhanced keyboard navigation
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey && event.key === 'Enter') {
+                event.preventDefault();
+                addItem();
+            }
+            
+            if (event.ctrlKey && event.key === 'b') {
+                event.preventDefault();
+                generateBill();
+            }
+            
+            if (event.ctrlKey && event.key === 'p') {
+                event.preventDefault();
+                printBill();
+            }
+            
+            if (event.key === 'F5') {
+                event.preventDefault();
+                searchCustomer();
+            }
+        });
+
+        // Barcode scanning functionality
+        document.getElementById('barcodeInput').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                const barcode = this.value.trim();
+                if (barcode) {
+                    fetch(`/get_product_by_barcode/${barcode}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                const product = data.product;
+                                document.getElementById('productName').value = product.name;
+                                fillProductDetails(product);
+                                document.getElementById('quantity').focus();
+                                showAlert('பொருள் விவரங்கள் தானாக நிரப்பப்பட்டது');
+                            } else {
+                                showAlert('பார்கோடுக்கான பொருள் காணப்படவில்லை!', 'error');
+                                document.getElementById('productName').focus();
+                            }
+                        })
+                        .catch(error => {
+                            showAlert('பார்கோட் தேடுவதில் பிழை: ' + error.message, 'error');
+                            document.getElementById('productName').focus();
+                        });
+                    this.value = '';
+                } else {
+                    document.getElementById('productName').focus();
+                }
+            }
+        });
+
+        // Auto-focus and navigation setup
+        document.getElementById('customerMobile').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                searchCustomer();
+            }
+        });
+
+        document.getElementById('newCustomerName').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                document.getElementById('newCustomerAddress').focus();
+            }
+        });
+
+        document.getElementById('newCustomerAddress').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                document.getElementById('newDebt').focus();
+            }
+        });
+
+        document.getElementById('newDebt').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                document.getElementById('settleDebt').focus();
+            }
+        });
+
+        document.getElementById('settleDebt').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                document.getElementById('barcodeInput').focus();
+            }
+        });
+
+        // Product entry navigation
+        document.getElementById('productName').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                // Try to auto-fill from database if product exists
+                const productName = this.value.trim();
+                if (productName) {
+                    fetch(`/get_product_by_name/${encodeURIComponent(productName)}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                fillProductDetails(data.product);
+                            }
+                            document.getElementById('quantity').focus();
+                        })
+                        .catch(error => {
+                            document.getElementById('quantity').focus();
+                        });
+                } else {
+                    document.getElementById('quantity').focus();
+                }
+            }
+        });
+
+        document.getElementById('quantity').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                document.getElementById('mrp').focus();
+            }
+        });
+
+        document.getElementById('mrp').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                document.getElementById('retailPrice').focus();
+            }
+        });
+
+        document.getElementById('retailPrice').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                addItem();
+            }
+        });
+
+        // Payment section navigation
+        document.getElementById('paymentType').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                document.getElementById('cashReceived').focus();
+            }
+        });
+
+        document.getElementById('cashReceived').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                document.getElementById('cashBalance').focus();
+            }
+        });
+
+        document.getElementById('cashReceived').addEventListener('input', calculateCashBalance);
+
+        document.getElementById('cashBalance').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                generateBill();
+            }
+        });
+
+        // Calculate updated balance when debt values change
+        document.getElementById('newDebt').addEventListener('input', updateBalancePreview);
+        document.getElementById('settleDebt').addEventListener('input', updateBalancePreview);
+
+        function updateBalancePreview() {
+            const oldBalance = parseFloat(document.getElementById('oldBalance').value) || 0;
+            const newDebt = parseFloat(document.getElementById('newDebt').value) || 0;
+            const settleDebt = parseFloat(document.getElementById('settleDebt').value) || 0;
+            const updatedBalance = oldBalance + newDebt - settleDebt;
+            
+            document.getElementById('updatedBalance').value = updatedBalance.toFixed(2);
+        }
+
+        // Format mobile number input
+        document.getElementById('customerMobile').addEventListener('input', function() {
+            let value = this.value.replace(/\D/g, '');
+            if (value.length > 10) {
+                value = value.slice(0, 10);
+            }
+            this.value = value;
+        });
+
+        // Load product list when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadProductList();
+            document.getElementById('productName').addEventListener('input', showProductSuggestions);
+            document.getElementById('customerMobile').focus(); // Start with customer mobile focus
+        });
+
+    </script>
+</body>
+</html>

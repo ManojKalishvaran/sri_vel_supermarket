@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Supermarket Label Printing</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Label Printing</h1>
+      <div class="store">
+        <label>Store Name</label>
+        <input id="storeName" type="text" value="{{ store_name }}" />
+      </div>
+    </header>
+
+    <section class="picker">
+      <div class="field">
+        <label for="productSearch">Product</label>
+        <input id="productSearch" type="text" placeholder="Type to search by name…" autocomplete="off" />
+        <ul id="suggestions" class="suggestions"></ul>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Labels to print</label>
+          <input id="count" type="number" min="1" value="1" />
+        </div>
+        <div class="field">
+          <label>EXP (optional)</label>
+          <input id="exp" type="text" placeholder="e.g., 12/2026" />
+        </div>
+        <button id="printBtn" disabled>Print</button>
+      </div>
+    </section>
+
+    <section class="preview">
+      <h2>Preview</h2>
+      <div id="previewBox">
+        <img id="labelPreview" alt="Label preview will appear here" />
+      </div>
+      <div id="meta"></div>
+    </section>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
