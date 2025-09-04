@@ -10,7 +10,7 @@ import uuid, base64
 
 app = Flask(__name__)
 app.secret_key = "super_secret_key"
-DB_NAME = "to_git/Data/products.db"
+DB_NAME = "Data/products.db"
 translator = Translator()
 
 # ---------- CREATE DB ----------
@@ -183,3 +183,4 @@ def edit_product(barcode):
 if __name__ == "__main__":
     init_db()
     app.run(debug=True, port=5000)
+
