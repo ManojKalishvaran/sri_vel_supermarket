@@ -10,7 +10,7 @@ import uuid, base64
 
 app = Flask(__name__)
 app.secret_key = "super_secret_key"
-DB_NAME = "Data/products.db"
+DB_NAME = "to_git/Data/products.db"
 translator = Translator()
 
 # ---------- CREATE DB ----------
@@ -37,6 +37,7 @@ def home():
     if "temp_products" not in session:
         session["temp_products"] = []
     return render_template("index.html", temp_products=session["temp_products"])
+
 
 @app.route('/delete_temp/<barcode>', methods=['POST'])
 def delete_temp(barcode):
@@ -95,6 +96,7 @@ def add_temp():
 
     return redirect('/')
 
+
 @app.route('/save_all', methods=['POST'])
 def save_all():
     conn = sqlite3.connect(DB_NAME)
@@ -110,6 +112,7 @@ def save_all():
     session["temp_products"] = []
     return redirect('/')
 
+
 @app.before_request
 def clear_old_session():
     if "temp_products" in session:
@@ -117,6 +120,64 @@ def clear_old_session():
         if session["temp_products"] and "mrp" not in session["temp_products"][0]:
             session["temp_products"] = []
             session.modified = True
+
+
+@app.route("/search", methods=["GET", "POST"])
+def search_products():
+    query = request.args.get("q", "").strip()
+    results = []
+    if query:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM products 
+            WHERE name LIKE ? OR tamil_name LIKE ? OR barcode LIKE ?
+        """, (f"%{query}%", f"%{query}%", f"%{query}%"))
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+    return render_template("index.html", temp_products=session.get("temp_products", []), results=results, search_query=query)
+
+
+@app.route("/api/search")
+def api_search():
+    query = request.args.get("q", "").strip()
+    results = []
+    if len(query) >= 2:  # only start after 2+ chars
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT barcode, name, tamil_name, measure, quantity, mrp, retail_price 
+            FROM products
+            WHERE name LIKE ? OR tamil_name LIKE ?
+            ORDER BY name LIMIT 10
+        """, (f"%{query}%", f"%{query}%"))
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+    return jsonify(results)
+
+
+@app.route("/edit/<barcode>", methods=["POST"])
+def edit_product(barcode):
+    name = request.form["name"].capitalize()
+    tamil_name = request.form["tamil_name"]
+    measure = request.form["measure"]
+    quantity = float(request.form["quantity"])
+    mrp = float(request.form["mrp"])
+    retail_price = float(request.form["retail_price"])
+
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE products 
+        SET name=?, tamil_name=?, measure=?, quantity=?, mrp=?, retail_price=? 
+        WHERE barcode=?
+    """, (name, tamil_name, measure, quantity, mrp, retail_price, barcode))
+    conn.commit()
+    conn.close()
+
+    return redirect(f"/search?q={name}")
 
 
 if __name__ == "__main__":
