@@ -103,63 +103,62 @@
   </div>
 </div>
 
-<!-- JS (reuse, just map fields correctly) -->
-<!-- <script>
-  const addForm = document.getElementById('add-form');
-  const addBtn  = document.getElementById('add-btn');
-  const tbody   = document.getElementById('temp-tbody');
-  const saveBtnContainer = document.getElementById('save-btn-container');
 
-  addForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fd = new FormData(addForm);
-    const params = new URLSearchParams(fd);
+<div class="bg-white shadow-xl rounded-2xl p-8 border border-gray-100">
+    <h2 class="text-2xl font-semibold text-gray-700 mb-6">📝Product Edit</h2>
+  <!-- Search Products -->
+<div class="bg-white shadow-xl rounded-2xl p-6 mb-10 border border-gray-100">
+  <h2 class="text-2xl font-semibold text-gray-700 mb-4">🔎 Search Products</h2>
 
-    const prevText = addBtn.textContent;
-    addBtn.disabled = true;
-    addBtn.textContent = 'Adding...';
+  <div class="relative">
+    <input type="text" id="live-search" placeholder="Type product name..."
+           class="w-full border rounded-xl p-3 focus:ring-2 focus:ring-blue-500 shadow-sm">
+    <div id="suggestions" 
+         class="absolute z-10 bg-white border rounded-xl mt-1 w-full shadow-lg hidden"></div>
+  </div>
+</div>
 
-    try {
-      const res = await fetch(addForm.action, {
-        method: 'POST',
-        headers: {
-          'X-Requested-With': 'XMLHttpRequest',
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: params.toString()
-      });
+  {% if results %}
+  <div class="bg-white shadow-xl rounded-2xl p-8 border border-gray-100">
+    <h2 class="text-2xl font-semibold text-gray-700 mb-6">📊 Search Results</h2>
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-100">
+        <tr>
+          <th class="px-4 py-3 text-left">Barcode</th>
+          <th class="px-4 py-3 text-left">Name</th>
+          <th class="px-4 py-3 text-left">Tamil Name</th>
+          <th class="px-4 py-3 text-left">Measure</th>
+          <th class="px-4 py-3 text-left">Qty</th>
+          <th class="px-4 py-3 text-left">MRP</th>
+          <th class="px-4 py-3 text-left">Retail</th>
+          <th class="px-4 py-3 text-left">Edit</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for p in results %}
+          <tr class="hover:bg-blue-50">
+            <form action="/edit/{{ p.barcode }}" method="post">
+              <td class="px-4 py-3">{{ p.barcode }}</td>
+              <td class="px-4 py-3"><input name="name" value="{{ p.name }}" class="border p-1 rounded"></td>
+              <td class="px-4 py-3"><input name="tamil_name" value="{{ p.tamil_name }}" class="border p-1 rounded"></td>
+              <td class="px-4 py-3"><input name="measure" value="{{ p.measure }}" class="border p-1 rounded"></td>
+              <td class="px-4 py-3"><input name="quantity" value="{{ p.quantity }}" class="border p-1 rounded" type="number" step="0.01"></td>
+              <td class="px-4 py-3"><input name="mrp" value="{{ p.mrp }}" class="border p-1 rounded" type="number" step="0.01"></td>
+              <td class="px-4 py-3"><input name="retail_price" value="{{ p.retail_price }}" class="border p-1 rounded" type="number" step="0.01"></td>
+              <td class="px-4 py-3">
+                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded">💾 Save</button>
+              </td>
+            </form>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
 
-      if (!res.ok) throw new Error('Server error');
-      const data = await res.json();
-      if (!data.ok) throw new Error('Add failed');
-
-      const p = data.product;
-      const tr = document.createElement('tr');
-      tr.className = 'hover:bg-blue-50 transition';
-      tr.innerHTML = `
-        <td class="py-3 px-4">${p.barcode}</td>
-        <td class="py-3 px-4">${p.name}</td>
-        <td class="py-3 px-4">${p.timestamp}</td>
-        <td class="py-3 px-4">${p.measure}</td>
-        <td class="py-3 px-4">${p.quantity}</td>
-        <td class="py-3 px-4">₹${Number(p.mrp).toFixed(2)}</td>
-        <td class="py-3 px-4 text-green-600 font-semibold">₹${Number(p.retail_price).toFixed(2)}</td>
-      `;
-
-      const emptyRow = tbody.querySelector('td[colspan]');
-      if (emptyRow) tbody.innerHTML = '';
-      tbody.appendChild(tr);
-
-      saveBtnContainer.classList.remove('hidden');
-      addForm.reset();
-    } catch (err) {
-      addForm.submit();
-    } finally {
-      addBtn.disabled = false;
-      addBtn.textContent = prevText;
-    }
-  });
-</script> -->
 
 <script>
   function focusName() {
@@ -285,6 +284,50 @@
       alert("Error deleting product");
     }
   }
+const searchInput = document.getElementById("live-search");
+const suggestionsBox = document.getElementById("suggestions");
+
+searchInput.addEventListener("input", async () => {
+  const q = searchInput.value.trim();
+  if (q.length < 2) {
+    suggestionsBox.classList.add("hidden");
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    const products = await res.json();
+
+    if (!products.length) {
+      suggestionsBox.innerHTML = "<div class='p-2 text-gray-500'>No results</div>";
+    } else {
+      suggestionsBox.innerHTML = products.map(p => `
+        <div class="p-2 hover:bg-blue-100 cursor-pointer" 
+             onclick="selectProduct('${p.barcode}', '${p.name}')">
+          ${p.name} — ${p.measure} ${p.quantity} | ₹${p.retail_price}
+        </div>
+      `).join("");
+    }
+    suggestionsBox.classList.remove("hidden");
+  } catch (err) {
+    console.error("Search failed", err);
+  }
+});
+
+function selectProduct(barcode, name) {
+  searchInput.value = name;
+  suggestionsBox.classList.add("hidden");
+  // optional → redirect to full editor for that product
+  window.location.href = `/search?q=${encodeURIComponent(name)}`;
+}
+
+document.addEventListener("click", (e) => {
+  if (!suggestionsBox.contains(e.target) && e.target !== searchInput) {
+    suggestionsBox.classList.add("hidden");
+  }
+});
+
+
 
 </script>
 
