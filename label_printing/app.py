@@ -14,14 +14,14 @@ from barcode_print import print_image
 import win32print   # ✅ to list printers if error
 
 # ---------- Config ----------
-DB_PATH = r"D:\New folder_s\sri_vel_supermarket\Data\products.db"
+DB_PATH = r"Data\products.db"
 
-DPI = 300
-LABEL_W_MM = 45  # Adjusted for better readability
+DPI = 203  # Standard thermal printer DPI
+LABEL_W_MM = 40  # Reduced width for better fit
 LABEL_H_MM = 25  # Height matches sugar packet
 LABELS_PER_ROW = 3
-PAGE_MARGIN_MM = 10  # Increased margin for better printer handling
-LABEL_SPACING_MM = 5  # Increased spacing between labels
+PAGE_MARGIN_MM = 5  # Reduced margin for better print area usage
+LABEL_SPACING_MM = 2  # Reduced spacing between labels
 PX_PER_MM = DPI / 25.4
 
 # Single label dimensions
@@ -43,9 +43,9 @@ FONTS = {
     "tiny": ImageFont.load_default(),
 }
 
-FONTS["bold"] = ImageFont.truetype("sri_vel_supermarket\label_printing\static\Inter_24pt-Bold.ttf", 16)
-FONTS["regular"] = ImageFont.truetype("sri_vel_supermarket\label_printing\static\Inter_18pt-Regular.ttf", 14)
-FONTS["tiny"] = ImageFont.truetype("sri_vel_supermarket\label_printing\static\Inter_18pt-Regular.ttf", 12)
+FONTS["bold"] = ImageFont.truetype("label_printing\static\Inter_24pt-Bold.ttf", 18)
+FONTS["regular"] = ImageFont.truetype("label_printing\static\Inter_18pt-Regular.ttf", 16)
+FONTS["tiny"] = ImageFont.truetype("label_printing\static\Inter_18pt-Regular.ttf", 14)
 
 # ---------- App ----------
 app = Flask(__name__)
@@ -79,9 +79,9 @@ def _generate_barcode_pil(code_text: str) -> Image.Image:
     barcode_obj = Code128(code_text, writer=ImageWriter())
     buf = io.BytesIO()
     barcode_obj.write(buf, options={
-        "module_width": 0.3,  # Width matching reference
-        "module_height": 15.0,  # Height matching reference
-        "quiet_zone": 3,  # Quiet zone matching reference
+        "module_width": 0.4,  # Increased width for better scanning
+        "module_height": 18.0,  # Increased height for better scanning
+        "quiet_zone": 6.0,  # Increased quiet zone for reliable scanning
         "write_text": False  # No text under barcode
     })
     buf.seek(0)
@@ -107,23 +107,23 @@ def compose_label(product: Dict[str, Any],
 
     # 2) Barcode centered
     bc_img = _generate_barcode_pil(product["barcode"])
-    ratio = min((LABEL_W - 2*margin) * 0.95 / bc_img.width, 1.0)
+    ratio = min((LABEL_W - 2*margin) * 0.85 / bc_img.width, 1.0)  # Slightly smaller barcode
     bc_w = int(bc_img.width * ratio)
-    bc_h = 30
-    bc_img = bc_img.resize((bc_w, bc_h))
+    bc_h = 25  # Reduced height for thermal printer
+    bc_img = bc_img.resize((bc_w, bc_h), Image.Resampling.LANCZOS)  # Better quality resize
     bc_x = center_x - bc_w//2
     label.paste(bc_img, (bc_x, y))
-    y += bc_h + 12
+    y += bc_h + 8  # Reduced spacing
 
     # 3) Product quantity and measure
     qty_text = f"{product['name']}      {product['quantity']:g} {product['measure']}"
     draw.text((x, y), qty_text, font=FONTS["regular"], fill="black")
-    y += 15
+    y += 18
 
     # 4) MRP and retail price
     price_text = f"MRP: {product['mrp']:g}      Rs. {product['retail_price']:g}"
     draw.text((x, y), price_text, font=FONTS["tiny"], fill="black")
-    y += 12
+    y += 15
 
     # 5) PKD and EXP
     pkd = datetime.now().strftime("%d.%m.%y")
