@@ -14,7 +14,7 @@ from barcode_print import print_image
 import win32print   # ✅ to list printers if error
 
 # ---------- Config ----------
-DB_PATH = r"D:\New folder_s\sri_vel_supermarket\Data\products.db"
+DB_PATH = r"\Data\products.db"
 
 DPI = 300
 LABEL_W_MM = 45  # Adjusted for better readability
@@ -43,9 +43,9 @@ FONTS = {
     "tiny": ImageFont.load_default(),
 }
 
-FONTS["bold"] = ImageFont.truetype("sri_vel_supermarket\label_printing\static\Inter_24pt-Bold.ttf", 16)
-FONTS["regular"] = ImageFont.truetype("sri_vel_supermarket\label_printing\static\Inter_18pt-Regular.ttf", 14)
-FONTS["tiny"] = ImageFont.truetype("sri_vel_supermarket\label_printing\static\Inter_18pt-Regular.ttf", 12)
+FONTS["bold"] = ImageFont.truetype("label_printing\static\Inter_24pt-Bold.ttf", 16)
+FONTS["regular"] = ImageFont.truetype("label_printing\static\Inter_18pt-Regular.ttf", 14)
+FONTS["tiny"] = ImageFont.truetype("label_printing\static\Inter_18pt-Regular.ttf", 12)
 
 # ---------- App ----------
 app = Flask(__name__)
