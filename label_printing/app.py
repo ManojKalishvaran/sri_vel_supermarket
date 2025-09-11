@@ -28,14 +28,14 @@ except Exception:
 # ---------- Config ----------
 DB_PATH = r"Data\products.db"
 
-# Keep DPI matching your thermal printer (203 or 300). 203 is common for label printers.
-DPI = 203
-LABEL_W_MM = 40
-LABEL_H_MM = 25
-LABELS_PER_ROW = 3
-PAGE_MARGIN_MM = 5
-LABEL_SPACING_MM = 2
-PX_PER_MM = DPI / 25.4
+# Rongta R220 printer settings
+DPI = 203  # R220 native DPI
+LABEL_W_MM = 40  # Label width
+LABEL_H_MM = 25  # Label height
+LABELS_PER_ROW = 3  # 3-up printing
+PAGE_MARGIN_MM = 2.0  # Minimal margins for thermal
+LABEL_SPACING_MM = 3.0  # Gap between labels
+PX_PER_MM = DPI / 25.4  # Pixel density
 
 # Single label dimensions
 LABEL_W = int(LABEL_W_MM * PX_PER_MM)
@@ -89,22 +89,23 @@ def get_product_by_barcode(barcode: str) -> Dict[str, Any] | None:
 
 def _generate_barcode_pil(code_text: str) -> Image.Image:
     """
-    Generate a barcode PIL image tuned for small labels and reliable scanning:
-    - produces a compact barcode with thicker modules and taller bars
-    - removes excessive white margins and crops tightly around the bars (keeping small quiet zone)
+    Generate a barcode optimized for thermal printer (R220) and reliable scanning:
+    - Uses optimal module width for 203 DPI
+    - Higher contrast with pure black/white
+    - Proper quiet zones for reliable scanning
     """
     # ensure length and digits
     code_text = code_text.zfill(14)[:14]
     barcode_obj = Code128(code_text, writer=ImageWriter())
     buf = io.BytesIO()
-    # increase module width & height to make bars bolder for cheap cameras
+    # Settings optimized for reliable barcode scanning
     barcode_obj.write(buf, options={
-        "module_width": 0.9,    # thicker bars -> easier to read
-        "module_height": 48.0,  # taller bars
-        "quiet_zone": 6.0,      # small quiet zone
-        "font_size": 10,
-        "text_distance": 1.0,
-        "write_text": False,
+        "module_width": 0.25,    # Thinner bars for better resolution
+        "module_height": 12.0,   # Optimal height for scanning
+        "quiet_zone": 6.5,       # Standard quiet zone
+        "write_text": False,     # No text to avoid interference
+        "background": "white",   # Pure white background
+        "foreground": "black"    # Pure black bars
     })
     buf.seek(0)
     img = Image.open(buf).convert("RGB")
@@ -359,8 +360,10 @@ def compose_sheet(product: Dict[str, Any], count: int, store_name: str = STORE_N
     return sheet
 
 def print_image_windows(image_path: str, title: str = "Label Print", printer_name: str = None):
-    """Simple image print helper for Windows printers (uses win32ui/win32print).
-    Centers horizontally and prints at 1:1 pixel scale when possible so label sizing remains accurate.
+    """Optimized print helper for Rongta R220 thermal printer.
+    - Uses exact 203 DPI scaling
+    - No margins (thermal printer handles spacing)
+    - Pure black/white output
     """
     if not WINDOWS_PRINTING_AVAILABLE:
         raise RuntimeError("Windows printing is not available on this system.")
@@ -368,35 +371,33 @@ def print_image_windows(image_path: str, title: str = "Label Print", printer_nam
     if not printer_name:
         printer_name = win32print.GetDefaultPrinter()
 
+    # Open and ensure pure black/white for thermal printing
     img = Image.open(image_path)
+    if img.mode != '1':  # If not already black/white
+        img = img.convert('L')  # Convert to grayscale
+        img = img.point(lambda x: 0 if x < 128 else 255, '1')  # Threshold to pure B/W
 
     hDC = win32ui.CreateDC()
     hDC.CreatePrinterDC(printer_name)
 
-    printable_area = hDC.GetDeviceCaps(8), hDC.GetDeviceCaps(10)
-    # physical size in pixels
-    physical_size = hDC.GetDeviceCaps(110), hDC.GetDeviceCaps(111)
+    # For R220 we want exact size output
+    dpi_x = hDC.GetDeviceCaps(88)  # LOGPIXELSX
+    dpi_y = hDC.GetDeviceCaps(90)  # LOGPIXELSY
+    
+    # Convert image size to printer's native DPI
+    img_w = int(img.width * dpi_x / DPI)
+    img_h = int(img.height * dpi_y / DPI)
+    
+    if img.size != (img_w, img_h):
+        img = img.resize((img_w, img_h), Image.Resampling.NEAREST)
 
-    img_w, img_h = img.size
-    max_w, max_h = printable_area
-
-    # If printable area is larger than image, print at actual size (no up/down scaling)
-    # but still ensure it fits by scaling down if needed.
-    ratio = min(max_w / img_w, max_h / img_h, 1.0)
-    target_w = int(img_w * ratio)
-    target_h = int(img_h * ratio)
-
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-    img = img.resize((target_w, target_h), Image.Resampling.NEAREST)
-
+    # For thermal printer, we want exact positioning
     hDC.StartDoc(title)
     hDC.StartPage()
 
     dib = ImageWin.Dib(img)
-    x = int((max_w - target_w) / 2)
-    y = 0
-    dib.draw(hDC.GetHandleOutput(), (x, y, x + target_w, y + target_h))
+    # Print at exact position with no margins
+    dib.draw(hDC.GetHandleOutput(), (0, 0, img_w, img_h))
 
     hDC.EndPage()
     hDC.EndDoc()

@@ -16,7 +16,7 @@
         z-index: 2000;
         max-height: 220px;
         overflow-y: auto;
-        width: calc(100% - 28px); /* tweak to fit your layout */
+        width: calc(100% - 28px);
         border-radius: 6px;
         padding: 4px 0;
         }
@@ -36,7 +36,6 @@
         margin-top:4px;
         }
 
-        /* (keeping most of your original styling, only essential adjustments shown here) */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%); min-height: 100vh; padding: 20px; }
         .container { max-width: 1400px; margin: 0 auto; background: white; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); overflow: hidden; }
@@ -52,11 +51,9 @@
         .form-group input, .form-group select, .form-group textarea { width:100%; padding:10px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px; background:white; }
         .btn { background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.15s ease; margin:2px; }
         .btn-danger { background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); }
-
         .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .items-table th, .items-table td { padding: 8px; text-align: left; border-bottom:1px solid #e2e8f0; font-size:13px; }
         .items-table th { background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%); color: white; font-weight: 600; font-size:13px; }
-
         .totals { background:#f8f9fa; padding:10px; border-radius:8px; margin-top:12px; }
         .totals .total-row { display:flex; justify-content:space-between; margin-bottom:6px; font-weight:600; font-size:13px; }
 
@@ -65,6 +62,9 @@
         .barcode-input { background:#fff7f7 !important; border:2px solid #ff4444 !important; font-weight:700; }
         @media (max-width:1200px) { .main-content { grid-template-columns: 1fr 1fr; gap:20px; } }
         @media (max-width:768px) { .main-content { grid-template-columns: 1fr; gap:15px; } }
+
+        /* small visual cue for editable row */
+        .editing-row { background: #fffbe6 !important; }
     </style>
 </head>
 <body>
@@ -87,7 +87,6 @@
             <!-- Customer Details Section -->
             <div class="form-section" style="grid-column: span 2;">
                 <h2>வாடிக்கையாளர் விவரங்கள்</h2>
-                <!-- [customer fields unchanged] -->
                 <div class="form-group">
                     <label for="customerMobile">மொபைல் எண்:</label>
                     <input type="tel" id="customerMobile" placeholder="மொபைல் எண் உள்ளிடவும்" maxlength="10">
@@ -141,7 +140,7 @@
                     <input type="text" id="barcodeInput" class="barcode-input" placeholder="பார்கோட் ஸ்கேன் செய்யவும்" autofocus>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" style="position:relative;">
                     <label for="productName">பொருளின் பெயர்:</label>
                     <input type="text" id="productName" placeholder="பொருளின் பெயர்" autocomplete="off">
                     <div id="productSuggestions" style="display:none; position:absolute; background:white; border:1px solid #e2e8f0; z-index:1000;"></div>
@@ -174,7 +173,7 @@
                 </div>
 
                 <div style="display:flex; gap:8px;">
-                    <button type="button" class="btn" onclick="addItem()">பொருள் சேர்க்க</button>
+                    <button type="button" id="addBtn" class="btn" onclick="addItem()">பொருள் சேர்க்க</button>
                     <button type="button" class="btn btn-danger" onclick="clearProductForm()">அழி</button>
                 </div>
             </div>
@@ -224,7 +223,7 @@
                 </div>
                 <div class="form-group">
                     <label for="cashBalance">திரும்ப கொடுத்த பணம் (₹):</label>
-                    <input type="number" id="cashBalance" placeholder="திரும்ப கொடுத்த பணம்" step="0.01" min="0">
+                    <input type="number" id="cashBalance" placeholder="திரும்ப கொடுத்த பணம்" step="0.01" min="0" readonly>
                 </div>
                 <div style="display:flex; gap:8px;">
                     <button class="btn" onclick="generateBill()">பில் உருவாக்க</button>
@@ -249,6 +248,7 @@
         let items = [];
         let currentCustomer = null;
         let productList = [];
+        let editingIndex = -1; // -1 means not editing
 
         // Load product list
         function loadProductList() {
@@ -351,68 +351,133 @@
             else unitSelect.value = 'count';
         }
 
-        // Add item to items array and update UI
-        function addItem() {
-            const name = document.getElementById('productName').value.trim();
-            const qtyInp = document.getElementById('quantity').value;
-            const quantity = parseInt(qtyInp || '0', 10);
-            const unit = document.getElementById('unit').value;
-            const mrp = parseFloat(document.getElementById('mrp').value || '0');
-            const retailPrice = parseFloat(document.getElementById('retailPrice').value || '0');
+function addItem() {
+    const name = document.getElementById('productName').value.trim();
+    const qtyInp = document.getElementById('quantity').value;
+    const quantity = parseInt(qtyInp || '0', 10);
+    const unit = document.getElementById('unit').value;
+    const mrp = Number(document.getElementById('mrp').value || 0);
+    const retailPrice = Number(document.getElementById('retailPrice').value || 0);
 
-            if (!name || !quantity || !mrp || !retailPrice) {
-                showAlert('அனைத்து பொருள் விவரங்களையும் உள்ளிடவும்', 'error');
-                return;
-            }
-            if (quantity <= 0) { showAlert('அளவு 0 விட அதிகமாக இருக்க வேண்டும்', 'error'); return; }
-            if (retailPrice > mrp) { showAlert('விற்பனை விலை எம்.ஆர்.பி.யை விட அதிகம் இல்லை', 'error'); return; }
+    if (!name || !quantity || isNaN(mrp) || isNaN(retailPrice)) {
+        showAlert('அனைத்து பொருள் விவரங்களையும் உள்ளிடவும்', 'error');
+        return;
+    }
+    if (quantity <= 0) { showAlert('அளவு 0 விட அதிகமாக இருக்க வேண்டும்', 'error'); return; }
+    if (retailPrice > mrp) { showAlert('விற்பனை விலை எம்.ஆர்.பி.யை விட அதிகம் இல்லை', 'error'); return; }
 
-            const idx = items.findIndex(i => i.name === name && i.unit === unit && i.mrp === mrp && i.retail_price === retailPrice);
-            if (idx !== -1) {
-                items[idx].quantity += quantity;
-                items[idx].total = items[idx].retail_price * items[idx].quantity;
-                showAlert('பொருள் அளவு புதுப்பிக்கப்பட்டது');
-            } else {
-                items.push({ name, quantity, unit, mrp, retail_price: retailPrice, total: retailPrice * quantity });
-                showAlert('பொருள் சேர்க்கப்பட்டது');
-            }
-            updateItemsTable();
-            clearProductForm();
-        }
+    // EDITING: update the existing item exactly
+    if (editingIndex !== -1 && items[editingIndex]) {
+        items[editingIndex].name = name;
+        items[editingIndex].quantity = quantity;
+        items[editingIndex].unit = unit;
+        items[editingIndex].mrp = Number(mrp);
+        items[editingIndex].retail_price = Number(retailPrice);
+        items[editingIndex].total = Number(retailPrice) * Number(quantity);
+        showAlert('பொருள் புதுப்பிக்கப்பட்டது');
+        editingIndex = -1;
+        document.getElementById('addBtn').textContent = 'பொருள் சேர்க்க';
+        updateItemsTable();
+        clearProductForm();
+        return;
+    }
+
+    // ADDING: look for identical product record (match on normalized fields)
+    const idx = items.findIndex(i =>
+        i.name === name &&
+        i.unit === unit &&
+        Number(i.mrp) === Number(mrp) &&
+        Number(i.retail_price) === Number(retailPrice)
+    );
+
+    if (idx !== -1) {
+        // merge quantities when the exact same pricing exists
+        items[idx].quantity = Number(items[idx].quantity) + Number(quantity);
+        items[idx].total = Number(items[idx].retail_price) * Number(items[idx].quantity);
+        showAlert('பொருள் அளவு புதுப்பிக்கப்பட்டது');
+    } else {
+        items.push({
+            name: name,
+            quantity: Number(quantity),
+            unit: unit,
+            mrp: Number(mrp),
+            retail_price: Number(retailPrice),
+            total: Number(retailPrice) * Number(quantity)
+        });
+        showAlert('பொருள் சேர்க்கப்பட்டது');
+    }
+
+    updateItemsTable();
+    clearProductForm();
+}
+
+    function editItem(index) {
+        const it = items[index];
+        if (!it) return;
+        editingIndex = index;
+        document.getElementById('productName').value = it.name;
+        document.getElementById('quantity').value = it.quantity;
+        document.getElementById('unit').value = it.unit || 'count';
+        document.getElementById('mrp').value = Number(it.mrp).toFixed(2);
+        document.getElementById('retailPrice').value = Number(it.retail_price).toFixed(2);
+        document.getElementById('addBtn').textContent = 'புதுப்பிக்க'; // Update
+        // highlight row visually
+        Array.from(document.querySelectorAll('#itemsTableBody tr')).forEach((tr, idx) => {
+            tr.classList.toggle('editing-row', idx === index);
+        });
+        document.getElementById('productName').focus();
+    }
 
         function removeItem(index) {
+            if (!confirm('இந்த பொருளை நீக்க விரும்புகிறீர்களா?')) return;
             items.splice(index, 1);
+            editingIndex = -1;
+            document.getElementById('addBtn').textContent = 'பொருள் சேர்க்க';
             updateItemsTable();
             showAlert('பொருள் நீக்கப்பட்டது');
         }
 
-        function updateItemsTable() {
-            const tbody = document.getElementById('itemsTableBody');
-            tbody.innerHTML = '';
-            let totalItems = 0, subtotal = 0, totalSavings = 0;
-            items.forEach((item, i) => {
-                const tr = document.createElement('tr');
-                const savings = (item.mrp - item.retail_price) * item.quantity;
-                tr.innerHTML = `
-                    <td>${item.name}</td>
-                    <td>${item.quantity} ${item.unit}</td>
-                    <td>₹${item.retail_price.toFixed(2)}</td>
-                    <td>₹${item.total.toFixed(2)}</td>
-                    <td>₹${savings.toFixed(2)}</td>
-                    <td><button class="btn btn-danger" onclick="removeItem(${i})">நீக்கு</button></td>
-                `;
-                tbody.appendChild(tr);
-                totalItems += item.quantity;
-                subtotal += item.total;
-                totalSavings += savings;
-            });
-            document.getElementById('totalUniqueProducts').textContent = items.length;
-            document.getElementById('totalItems').textContent = totalItems;
-            document.getElementById('subtotal').textContent = subtotal.toFixed(2);
-            document.getElementById('totalSavings').textContent = totalSavings.toFixed(2);
-            document.getElementById('pointsEarned').textContent = Math.floor(subtotal / 100);
-            calculateCashBalance();
-        }
+function updateItemsTable() {
+    const tbody = document.getElementById('itemsTableBody');
+    tbody.innerHTML = '';
+    let totalItems = 0, subtotal = 0, totalSavings = 0;
+    items.forEach((item, i) => {
+        // Normalise numeric fields for display
+        const qty = Number(item.quantity);
+        const retail = Number(item.retail_price);
+        const mrp = Number(item.mrp);
+        const total = Number(item.total) || (retail * qty);
+        const savings = (mrp - retail) * qty;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${item.name}</td>
+            <td>${qty} ${item.unit}</td>
+            <td>₹${retail.toFixed(2)}</td>
+            <td>₹${total.toFixed(2)}</td>
+            <td>₹${savings.toFixed(2)}</td>
+            <td>
+                <button class="btn" onclick="editItem(${i})">Edit</button>
+                <button class="btn btn-danger" onclick="removeItem(${i})">நீக்கு</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+        totalItems += qty;
+        subtotal += total;
+        totalSavings += savings;
+    });
+    document.getElementById('totalUniqueProducts').textContent = items.length;
+    document.getElementById('totalItems').textContent = totalItems;
+    document.getElementById('subtotal').textContent = subtotal.toFixed(2);
+    document.getElementById('totalSavings').textContent = totalSavings.toFixed(2);
+    document.getElementById('pointsEarned').textContent = Math.floor(subtotal / 100);
+    calculateCashBalance();
+
+    // clear any editing row highlight if not editing
+    if (editingIndex === -1) {
+        Array.from(document.querySelectorAll('#itemsTableBody tr')).forEach(tr => tr.classList.remove('editing-row'));
+    }
+}
 
         function calculateCashBalance() {
             const subtotal = parseFloat(document.getElementById('subtotal').textContent) || 0;
@@ -422,12 +487,15 @@
         }
 
         function clearProductForm() {
-            document.getElementById('productName').value = '';
-            document.getElementById('quantity').value = '';
-            document.getElementById('mrp').value = '';
-            document.getElementById('retailPrice').value = '';
-            document.getElementById('barcodeInput').focus();
-        }
+    document.getElementById('productName').value = '';
+    document.getElementById('quantity').value = '';
+    document.getElementById('mrp').value = '';
+    document.getElementById('retailPrice').value = '';
+    document.getElementById('barcodeInput').focus();
+    editingIndex = -1;
+    document.getElementById('addBtn').textContent = 'பொருள் சேர்க்க';
+    Array.from(document.querySelectorAll('#itemsTableBody tr')).forEach(tr => tr.classList.remove('editing-row'));
+}
 
         function generateBill() {
             const mobile = document.getElementById('customerMobile').value.trim();
@@ -443,9 +511,18 @@
             if (mobile && (!name || !address)) { showAlert('மொபைல் கொடுக்கப்பட்டால் பெயர் மற்றும் முகவரி தேவை', 'error'); return; }
             if (items.length === 0) { showAlert('குறைந்தது ஒரு பொருள் சேர்க்கவும்', 'error'); return; }
 
+            // map items to expected server shape (name, quantity, unit, mrp, retail_price)
+            const itemsForServer = items.map(it => ({
+                name: it.name,
+                quantity: it.quantity,
+                unit: it.unit,
+                mrp: it.mrp,
+                retail_price: it.retail_price
+            }));
+
             const billData = {
                 customer: { mobile: mobile || '', name: name, address: address },
-                items: items,
+                items: itemsForServer,
                 payment: { payment_type: paymentType, cash_received: cashReceived, cash_balance: cashBalance },
                 balance: { old_balance: oldBalance, new_debt: newDebt, settle_debt: settleDebt }
             };
@@ -487,18 +564,26 @@
             if (!billContent || billContent.includes('இங்கே')) { showAlert('முதலில் பில் உருவாக்கவும்', 'error'); return; }
 
             const printWindow = window.open('', '_blank');
+            // use <pre> for predictable spacing and monospace
             printWindow.document.write(`
                 <html><head><title>பில் பிரிண்ட்</title>
                 <style>
                     @page { size: 58mm auto; margin: 3mm; }
-                    body { font-family: 'Courier New', monospace; font-size: 10px; line-height:1.15; white-space: pre-wrap; margin:0; padding:2mm; width:58mm; }
+                    body { font-family: 'Courier New', monospace; font-size: 10px; line-height:1.15; white-space: pre; margin:0; padding:2mm; width:58mm; }
+                    pre { margin:0; }
                     @media print { body { margin:0; padding:0; } }
                 </style>
-                </head><body>${billContent.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</body></html>
+                </head><body><pre>${escapeHtml(billContent)}</pre></body></html>
             `);
             printWindow.document.close();
+            printWindow.focus();
             printWindow.print();
+            setTimeout(()=>printWindow.close(), 500);
             showAlert('பில் பிரிண்ட் அனுப்பப்பட்டது');
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
         function resetForm() {
@@ -531,6 +616,7 @@
             if (e.key === 'F5') { e.preventDefault(); searchCustomer(); }
         });
 
+        // Barcode entry
         document.getElementById('barcodeInput').addEventListener('keypress', function(event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
@@ -558,7 +644,8 @@
                 this.value = '';
             }
         });
-            
+
+        // product name enter-to-add
         document.getElementById('productName').addEventListener('keypress', function(event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
@@ -571,12 +658,10 @@
                         if (data.success) {
                             fillProductDetails(data.product);
 
-                            // Default quantity = 1 if not given
                             if (!document.getElementById('quantity').value) {
                                 document.getElementById('quantity').value = 1;
                             }
 
-                            // Directly add item
                             addItem();
                         } else {
                             showAlert('பொருள் கிடைக்கவில்லை', 'error');
@@ -585,7 +670,6 @@
                     .catch(() => showAlert('தேடல் பிழை', 'error'));
             }
         });
-
 
         // navigation shortcuts
         document.getElementById('quantity').addEventListener('keypress', e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('mrp').focus(); }});
@@ -616,7 +700,6 @@
   let suggIndex = -1;
   let currentMatches = [];
 
-  // Helper: render suggestions
   function renderSuggestions(matches) {
     suggBox.innerHTML = '';
     if (!matches || matches.length === 0) {
@@ -628,9 +711,7 @@
       div.className = 'suggestion-item';
       div.dataset.index = idx;
       div.innerHTML = `<div>${m}</div>`;
-      // optional subtext could be product unit or category if you want
       div.addEventListener('mousedown', (ev) => {
-        // use mousedown (not click) so it runs before blur
         ev.preventDefault();
         selectSuggestion(idx);
       });
@@ -639,7 +720,6 @@
     suggBox.style.display = 'block';
   }
 
-  // Compute and show matches
   prodInput.addEventListener('input', function () {
     const v = this.value.trim().toLowerCase();
     if (!v) { renderSuggestions([]); return; }
@@ -648,26 +728,24 @@
     suggIndex = -1;
   });
 
-  // Keyboard navigation (arrow keys + enter)
   prodInput.addEventListener('keydown', function (e) {
     if (suggBox.style.display === 'none') return;
-    const items = suggBox.querySelectorAll('.suggestion-item');
-    if (!items || items.length === 0) return;
+    const itemsS = suggBox.querySelectorAll('.suggestion-item');
+    if (!itemsS || itemsS.length === 0) return;
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      suggIndex = (suggIndex + 1) % items.length;
-      updateActiveSuggestion(items);
+      suggIndex = (suggIndex + 1) % itemsS.length;
+      updateActiveSuggestion(itemsS);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      suggIndex = (suggIndex - 1 + items.length) % items.length;
-      updateActiveSuggestion(items);
+      suggIndex = (suggIndex - 1 + itemsS.length) % itemsS.length;
+      updateActiveSuggestion(itemsS);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (suggIndex >= 0 && suggIndex < items.length) {
+      if (suggIndex >= 0 && suggIndex < itemsS.length) {
         selectSuggestion(suggIndex);
       } else {
-        // No highlighted suggestion - try to lookup exact name and auto-add
         const val = this.value.trim();
         if (val) searchAndAutoAddByName(val);
       }
@@ -676,22 +754,19 @@
     }
   });
 
-  function updateActiveSuggestion(items) {
-    items.forEach(it => it.classList.remove('suggestion-active'));
-    if (suggIndex >= 0 && items[suggIndex]) items[suggIndex].classList.add('suggestion-active');
+  function updateActiveSuggestion(itemsS) {
+    itemsS.forEach(it => it.classList.remove('suggestion-active'));
+    if (suggIndex >= 0 && itemsS[suggIndex]) itemsS[suggIndex].classList.add('suggestion-active');
   }
 
-  // Called when user selects a suggestion (by click or keyboard)
   function selectSuggestion(idx) {
     const name = currentMatches[idx];
     if (!name) return;
     prodInput.value = name;
     suggBox.style.display = 'none';
-    // Fill details from server by name, then auto-add
     searchAndAutoAddByName(name);
   }
 
-  // Search product by name on server, fill details, set qty=1 if empty, and auto-add
   function searchAndAutoAddByName(name) {
     fetch('/get_product_by_name/' + encodeURIComponent(name))
       .then(r => r.json())
@@ -700,7 +775,6 @@
           const product = data.product;
           fillProductDetails(product);
           if (!document.getElementById('quantity').value) document.getElementById('quantity').value = 1;
-          // small debounce to allow UI to update
           setTimeout(() => addItem(), 30);
         } else {
           showAlert('பொருள் கிடைக்கவில்லை: ' + name, 'error');
@@ -712,12 +786,10 @@
       });
   }
 
-    // Hide suggestions on blur (but allow suggestion click to proceed)
     prodInput.addEventListener('blur', () => {
         setTimeout(() => { suggBox.style.display = 'none'; }, 120);
     });
 
-    // On focus, if input has value, trigger suggestions
     prodInput.addEventListener('focus', () => {
         const v = prodInput.value.trim().toLowerCase();
         if (v) {
@@ -726,18 +798,10 @@
         }
     });
 
-    // Ensure suggestion box is positioned near input (optional tweak)
-    // If your layout wraps productName in a relative container, this may be unnecessary.
-    // Otherwise, set suggBox width and left relative to input:
-    (function positionSuggestionBox() {
-        const rect = prodInput.getBoundingClientRect();
-        // adjust CSS if needed — already set width via CSS calc
-    })();
-    // --- Page init: make sure product list and totals load on start ---
+    // Page init
     document.addEventListener('DOMContentLoaded', function() {
         loadProductList();
         loadTodayTotals();
-        // if you want focus on barcode first:
         const bc = document.getElementById('barcodeInput');
         if (bc) bc.focus();
     });

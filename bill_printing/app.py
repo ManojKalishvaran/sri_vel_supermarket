@@ -6,6 +6,7 @@ from datetime import datetime
 import textwrap
 import win32print
 import win32ui
+import pywintypes
 
 app = Flask(__name__)
 
@@ -20,7 +21,6 @@ PRODUCTS_DB = 'Data/products.db'
 
 def init_databases():
     """Initialize SQLite databases with required tables"""
-    
     # Initialize customers database
     conn = sqlite3.connect(CUSTOMERS_DB)
     cursor = conn.cursor()
@@ -36,7 +36,7 @@ def init_databases():
     ''')
     conn.commit()
     conn.close()
-    
+
     # Initialize bills database
     conn = sqlite3.connect(BILLS_DB)
     cursor = conn.cursor()
@@ -59,7 +59,7 @@ def init_databases():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS bill_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,7 +84,7 @@ def get_customer(mobile):
         cursor.execute('SELECT mobile, name, address, points, balance FROM customers WHERE mobile = ?', (mobile,))
         row = cursor.fetchone()
         conn.close()
-        
+
         if row:
             return {
                 'mobile': row[0],
@@ -118,18 +118,18 @@ def update_customer(customer_data):
     try:
         conn = sqlite3.connect(CUSTOMERS_DB)
         cursor = conn.cursor()
-        
+
         # Check if customer exists
         cursor.execute('SELECT mobile FROM customers WHERE mobile = ?', (customer_data['mobile'],))
         exists = cursor.fetchone()
-        
+
         if exists:
             # Update existing customer
             cursor.execute('''
                 UPDATE customers 
                 SET name = ?, address = ?, points = ?, balance = ?
                 WHERE mobile = ?
-            ''', (customer_data['name'], customer_data['address'], 
+            ''', (customer_data['name'], customer_data['address'],
                   customer_data['points'], customer_data['balance'], customer_data['mobile']))
         else:
             # Create new customer
@@ -138,7 +138,7 @@ def update_customer(customer_data):
                 VALUES (?, ?, ?, ?, ?)
             ''', (customer_data['mobile'], customer_data['name'], customer_data['address'],
                   customer_data['points'], customer_data['balance']))
-        
+
         conn.commit()
         conn.close()
         return True
@@ -157,7 +157,7 @@ def get_product_by_barcode(barcode):
         ''', (barcode,))
         row = cursor.fetchone()
         conn.close()
-        
+
         if row:
             return {
                 'name': row[1] if row[1] else row[0],  # Prefer Tamil name
@@ -180,7 +180,7 @@ def get_product_by_name(name):
         ''', (f'%{name}%', f'%{name}%'))
         row = cursor.fetchone()
         conn.close()
-        
+
         if row:
             return {
                 'name': row[1] if row[1] else row[0],  # Prefer Tamil name
@@ -200,7 +200,7 @@ def get_product_list():
         cursor.execute('SELECT DISTINCT tamil_name, name FROM products')
         rows = cursor.fetchall()
         conn.close()
-        
+
         products = []
         for row in rows:
             # Add Tamil name if available, otherwise use English name
@@ -218,7 +218,7 @@ def save_bill(bill_data, items_data):
     try:
         conn = sqlite3.connect(BILLS_DB)
         cursor = conn.cursor()
-        
+
         # Save bill
         cursor.execute('''
             INSERT INTO bills (
@@ -233,7 +233,7 @@ def save_bill(bill_data, items_data):
             bill_data['cash_received'], bill_data['cash_balance'], bill_data['old_balance'],
             bill_data['new_balance'], bill_data['points_earned']
         ))
-        
+
         # Save bill items
         for item in items_data:
             cursor.execute('''
@@ -244,7 +244,7 @@ def save_bill(bill_data, items_data):
                 item['bill_number'], item['product_name'], item['quantity'],
                 item['unit'], item['mrp'], item['retail_price'], item['total_price']
             ))
-        
+
         conn.commit()
         conn.close()
         return True
@@ -346,10 +346,10 @@ def create_customer_route():
         mobile = data.get('mobile')
         name = data.get('name')
         address = data.get('address', '')
-        
+
         if not mobile or not name:
             return jsonify({'error': 'Mobile and name are required'}), 400
-        
+
         # Create customer with 0 balance and points
         customer_data = {
             'mobile': mobile,
@@ -358,7 +358,7 @@ def create_customer_route():
             'points': 0,
             'balance': 0
         }
-        
+
         if update_customer(customer_data):
             return jsonify({
                 'success': True,
@@ -367,7 +367,7 @@ def create_customer_route():
             })
         else:
             return jsonify({'error': 'Failed to create customer'}), 500
-            
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -398,11 +398,11 @@ def update_balance():
         data = request.json
         mobile = data.get('mobile')
         new_balance = float(data.get('balance', 0))
-        
+
         customer = get_customer(mobile)
         if not customer:
             return jsonify({'error': 'Customer not found'}), 404
-            
+
         # Update balance
         customer['balance'] = new_balance
         if update_customer(customer):
@@ -413,7 +413,7 @@ def update_balance():
             })
         else:
             return jsonify({'error': 'Failed to update balance'}), 500
-        
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -443,29 +443,29 @@ def today_totals():
 def create_bill():
     try:
         data = request.json
-        
+
         # Generate bill number
         bill_number = f"INV{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
+
         # Get current date and time
         now = datetime.now()
         current_date = now.strftime('%d/%m/%Y')
         current_time = now.strftime('%H:%M:%S')
-        
+
         # Calculate totals
         total_items = sum(int(item['quantity']) for item in data['items'])
         total_unique_products = len(data['items'])
         subtotal = sum(float(item['retail_price']) * int(item['quantity']) for item in data['items'])
         total_savings = sum((float(item['mrp']) - float(item['retail_price'])) * int(item['quantity']) for item in data['items'])
-        
+
         # Calculate points (1 point per Rs 100)
         points_earned = int(subtotal // 100)
-        
+
         # Get or create customer data
         customer = None
         old_balance = 0
         old_points = 0
-        
+
         if data['customer']['mobile']:
             customer = get_customer(data['customer']['mobile'])
             if customer:
@@ -478,17 +478,17 @@ def create_bill():
                 if customer:
                     old_balance = customer['balance']
                     old_points = customer['points']
-        
+
         # Calculate new balance based on debt management
         new_debt = float(data['balance'].get('new_debt', 0))
         settle_debt = float(data['balance'].get('settle_debt', 0))
 
         new_balance = old_balance
         new_balance = old_balance + new_debt - settle_debt
-        
+
         # Handle payment
         cash_received = float(data['payment']['cash_received']) if data['payment']['cash_received'] else 0
-        cash_balance = cash_received - subtotal 
+        cash_balance = cash_received - subtotal
 
         # If cash_balance negative => customer still owes money -> add to new_balance
         new_balance = new_balance + abs(cash_balance) if cash_balance < 0 else new_balance
@@ -529,7 +529,7 @@ def create_bill():
             'new_balance': new_balance,
             'points_earned': points_earned if data['customer']['mobile'] else 0
         }
-        
+
         # Prepare items data
         items_data = []
         for item in data['items']:
@@ -542,12 +542,12 @@ def create_bill():
                 'retail_price': item['retail_price'],
                 'total_price': float(item['retail_price']) * int(item['quantity'])
             })
-        
+
         # Save to database
         if save_bill(bill_data, items_data):
             # Generate bill string
             bill_string = generate_bill_string(bill_data, customer_data, items_data)
-            
+
             # Print bill automatically (try/catch; if fails simply return bill_string)
             try:
                 receipt_text = bill_string
@@ -556,20 +556,42 @@ def create_bill():
                 hDC.CreatePrinterDC(printer_name)
                 hDC.StartDoc("Supermarket Bill")
                 hDC.StartPage()
-                
-                x = 100
+
+                # Create and select a font - measured line height will be taken from GetTextExtent
+                # Use a small fixed-pitch font (Courier) for receipts
+                font = win32ui.CreateFont({
+                    "name": "Courier New",
+                    "height": 18,     # font height in logical units; tweak if needed
+                    "weight": 400,
+                })
+                hDC.SelectObject(font)
+
                 y = 100
-                # use smaller line height for better fit on narrow rolls
-                line_height = 20
-                
-                for line in receipt_text.split("\n"):
-                    hDC.TextOut(x, y, line)
-                    y += line_height
-                
+                x = 50
+
+                # Use measured height for each line to avoid overlapping
+                for raw_line in receipt_text.split("\n"):
+                    line = raw_line.rstrip()
+                    try:
+                        # Ensure unicode text is passed
+                        hDC.TextOut(x, y, line)
+                        size = hDC.GetTextExtent(line)
+                        line_height = size[1] + 4  # small padding
+                        y += line_height
+                    except pywintypes.error as texterr:
+                        # If a particular line causes error, try safe fallback
+                        try:
+                            hDC.TextOut(x, y, line.encode('ascii', errors='replace').decode('ascii'))
+                            size = hDC.GetTextExtent(line[:40])
+                            y += size[1] + 4
+                        except Exception:
+                            y += 20
+
                 hDC.EndPage()
                 hDC.EndDoc()
                 hDC.DeleteDC()
             except Exception as print_error:
+                # Keep process running even if printing fails; log error
                 print(f"Print error: {print_error}")
 
             return jsonify({
@@ -580,7 +602,7 @@ def create_bill():
             })
         else:
             return jsonify({'error': 'Failed to save bill'}), 500
-        
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
