@@ -34,7 +34,7 @@ PAGE_H_MM = PAGE_MARGIN_MM * 2 + LABEL_H_MM
 PAGE_W = int(PAGE_W_MM * PX_PER_MM)
 PAGE_H = int(PAGE_H_MM * PX_PER_MM)
 
-STORE_NAME_DEFAULT = "EM.PE.EM SUPER MARKET"  # Updated to match reference
+STORE_NAME_DEFAULT = "SRI VELAVAN SUPERMARKET"  # Updated to match reference
 PRINTER_NAME = "Bar Code Printer R220"   # ✅ exact Windows name
 
 FONTS = {
@@ -87,48 +87,146 @@ def _generate_barcode_pil(code_text: str) -> Image.Image:
     buf.seek(0)
     return Image.open(buf).convert("RGB")
 
-
 def compose_label(product: Dict[str, Any],
                   store_name: str = STORE_NAME_DEFAULT,
                   exp: str = "") -> Image.Image:
+    """
+    Formal, reference-style label:
+      - rounded white panel with thin border
+      - store name at top (center)
+      - centered barcode (kept to a moderate height)
+      - barcode digits under bars
+      - product name centered
+      - QTY (left) and Measure (right)
+      - MRP (left) and RP (right) emphasized
+    """
+    # base image (white background)
     label = Image.new("RGB", (LABEL_W, LABEL_H), "white")
     draw = ImageDraw.Draw(label)
+    cx = LABEL_W // 2
 
-    # Margins
-    margin = int(1.5 * PX_PER_MM)
-    x = margin
-    y = margin
-    center_x = LABEL_W // 2
+    # inner panel (rounded rectangle) to give 'sticker' look like your reference
+    pad = max(4, int(PX_PER_MM * 0.8))
+    panel_box = (pad, pad, LABEL_W - pad, LABEL_H - pad)
+    corner_radius = max(6, int(PX_PER_MM * 1.2))
+    # panel fill white and subtle border for a formal look
+    draw.rounded_rectangle(panel_box, radius=corner_radius, fill="white", outline="black", width=1)
 
-    # 1) Store name
-    text_width = draw.textlength(store_name, font=FONTS["bold"])
-    draw.text((center_x - text_width/2, y), store_name, font=FONTS["bold"], fill="black")
-    y += 28
+    # content start (inset inside the rounded panel)
+    content_x0 = pad + int(PX_PER_MM * 0.6)
+    content_x1 = LABEL_W - pad - int(PX_PER_MM * 0.6)
+    content_width = content_x1 - content_x0
+    y = pad + int(PX_PER_MM * 0.6)
 
-    # 2) Barcode centered
-    bc_img = _generate_barcode_pil(product["barcode"])
-    ratio = min((LABEL_W - 2*margin) * 0.85 / bc_img.width, 1.0)  # Slightly smaller barcode
-    bc_w = int(bc_img.width * ratio)
-    bc_h = 25  # Reduced height for thermal printer
-    bc_img = bc_img.resize((bc_w, bc_h), Image.Resampling.LANCZOS)  # Better quality resize
-    bc_x = center_x - bc_w//2
+    # 1) Store name - single centered line, uppercase, clipped if needed
+    store_text = (store_name or STORE_NAME_DEFAULT).strip().upper()
+    store_font = FONTS["bold"]
+    max_store_w = content_width
+    if draw.textlength(store_text, font=store_font) > max_store_w:
+        # fallback to smaller font
+        store_font = FONTS["regular"]
+    # final clip/truncate if still too wide
+    if draw.textlength(store_text, font=store_font) > max_store_w:
+        # truncate with ellipsis
+        while draw.textlength(store_text + "...", font=store_font) > max_store_w and len(store_text) > 3:
+            store_text = store_text[:-1]
+        store_text += "..."
+    sw = draw.textlength(store_text, font=store_font)
+    draw.text((cx - sw / 2, y), store_text, font=store_font, fill="black")
+    y += int(PX_PER_MM * 3.0)  # leave breathing room below store name
+
+    # 2) Barcode - generate, then cap width and *height* so it doesn't dominate the label
+    bc_img = _generate_barcode_pil(str(product.get("barcode", "")).strip() or "0000000000000")
+    # target max width/height for barcode inside panel
+    max_bc_w = int(content_width * 0.95)
+    max_bc_h = int(LABEL_H * 0.42)  # restrict height to maintain formal proportion
+    # scale down while keeping aspect
+    w_ratio = max_bc_w / bc_img.width if bc_img.width > max_bc_w else 1.0
+    h_ratio = max_bc_h / bc_img.height if bc_img.height > max_bc_h else 1.0
+    ratio = min(w_ratio, h_ratio, 1.0)
+    if ratio < 1.0:
+        new_w = max(1, int(bc_img.width * ratio))
+        new_h = max(1, int(bc_img.height * ratio))
+        bc_img = bc_img.resize((new_w, new_h), Image.Resampling.NEAREST)
+
+    bc_x = cx - bc_img.width // 2
     label.paste(bc_img, (bc_x, y))
-    y += bc_h + 8  # Reduced spacing
 
-    # 3) Product quantity and measure
-    qty_text = f"{product['name']}      {product['quantity']:g} {product['measure']}"
-    draw.text((x, y), qty_text, font=FONTS["regular"], fill="black")
-    y += 18
+    # barcode bottom
+    y = y + bc_img.height + int(PX_PER_MM * 0.2)
 
-    # 4) MRP and retail price
-    price_text = f"MRP: {product['mrp']:g}      Rs. {product['retail_price']:g}"
-    draw.text((x, y), price_text, font=FONTS["tiny"], fill="black")
-    y += 15
+    # 2b) barcode digits (human readable) centered below barcode
+    # barcode_digits = str(product.get("barcode", "")).strip()
+    # if barcode_digits:
+    #     digits_font = FONTS["tiny"]
+    #     d_w = draw.textlength(barcode_digits, font=digits_font)
+    #     draw.text((cx - d_w / 2, y), barcode_digits, font=digits_font, fill="black")
+    #     y += int(PX_PER_MM * 1.2)
 
-    # 5) PKD and EXP
-    pkd = datetime.now().strftime("%d.%m.%y")
-    date_text = f"PKD: {pkd}    EXP: {exp or ''}"
-    draw.text((x, y), date_text, font=FONTS["tiny"], fill="black")
+    # 3) Product name - centered, up to two lines if necessary
+    prod_name = str(product.get("name", "")).strip()
+    name_font = FONTS["regular"]
+    max_name_w = content_width
+    if draw.textlength(prod_name, font=name_font) <= max_name_w:
+        draw.text((cx - draw.textlength(prod_name, font=name_font) / 2, y), prod_name, font=name_font, fill="black")
+        y += int(PX_PER_MM * 2.0)
+    else:
+        # naive two-line wrap
+        words = prod_name.split()
+        line1 = ""
+        line2 = ""
+        for w in words:
+            if draw.textlength((line1 + " " + w).strip(), font=name_font) <= max_name_w:
+                line1 = (line1 + " " + w).strip()
+            else:
+                line2 = (line2 + " " + w).strip()
+        if not line1:
+            line1 = prod_name[:int(len(prod_name)/2)]
+            line2 = prod_name[int(len(prod_name)/2):]
+        # truncate lines if still too long
+        def fit_line(s):
+            while draw.textlength(s + "...", font=name_font) > max_name_w and len(s) > 3:
+                s = s[:-1]
+            return s + "..." if draw.textlength(s, font=name_font) > max_name_w else s
+        line1 = fit_line(line1)
+        line2 = fit_line(line2) if line2 else ""
+        draw.text((cx - draw.textlength(line1, font=name_font) / 2, y), line1, font=name_font, fill="black")
+        y += int(PX_PER_MM * 1.4)
+        if line2:
+            draw.text((cx - draw.textlength(line2, font=name_font) / 2, y), line2, font=name_font, fill="black")
+            y += int(PX_PER_MM * 1.8)
+        else:
+            y += int(PX_PER_MM * 0.6)
+
+    # 4) Info row: QTY (left) and Measure (right)
+    info_font = FONTS["tiny"]
+    left_info = f"QTY: {product.get('quantity', '')}"
+    right_info = f"{product.get('measure', '')}"
+    left_x = content_x0 + int(PX_PER_MM * 0.4)
+    right_x = content_x1 - int(PX_PER_MM * 0.4) - draw.textlength(right_info, font=info_font)
+    # guard against overlap
+    if right_x - (left_x + draw.textlength(left_info, font=info_font)) < int(PX_PER_MM * 2):
+        # make right shorter
+        if len(right_info) > 6:
+            right_info = right_info[:6] + "..."
+            right_x = content_x1 - int(PX_PER_MM * 0.4) - draw.textlength(right_info, font=info_font)
+    draw.text((left_x, y), left_info, font=info_font, fill="black")
+    draw.text((right_x, y), right_info, font=info_font, fill="black")
+    y += int(PX_PER_MM * 1.6)
+
+    # 5) Price row: MRP left, RP right (emphasized)
+    price_font = FONTS["bold"]
+    mrp_text = f"MRP: ₹{product.get('mrp', 0):g}"
+    rp_text = f"RP: ₹{product.get('retail_price', 0):g}"
+    left_x = content_x0 + int(PX_PER_MM * 0.4)
+    right_x = content_x1 - int(PX_PER_MM * 0.4) - draw.textlength(rp_text, font=price_font)
+    # fallback if overlap
+    if right_x - (left_x + draw.textlength(mrp_text, font=price_font)) < int(PX_PER_MM * 2):
+        price_font = FONTS["regular"]
+        right_x = content_x1 - int(PX_PER_MM * 0.4) - draw.textlength(rp_text, font=price_font)
+    draw.text((left_x, y), mrp_text, font=price_font, fill="black")
+    draw.text((right_x, y), rp_text, font=price_font, fill="black")
+    y += int(PX_PER_MM * 1.0)
 
     return label
 
