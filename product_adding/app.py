@@ -49,6 +49,23 @@ def delete_temp(barcode):
         return jsonify(ok=True), 200
 
     return redirect('/')
+@app.route("/api/all_products")
+def api_all_products():
+    """Return full product list as JSON."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT barcode, name, tamil_name, measure, quantity, mrp, retail_price
+            FROM products
+            ORDER BY name
+        """)
+        rows = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/add_temp', methods=['POST'])

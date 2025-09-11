@@ -110,12 +110,19 @@
 <div class="bg-white shadow-xl rounded-2xl p-6 mb-10 border border-gray-100">
   <h2 class="text-2xl font-semibold text-gray-700 mb-4">🔎 Search Products</h2>
 
-  <div class="relative">
-    <input type="text" id="live-search" placeholder="Type product name..."
-           class="w-full border rounded-xl p-3 focus:ring-2 focus:ring-blue-500 shadow-sm">
-    <div id="suggestions" 
-         class="absolute z-10 bg-white border rounded-xl mt-1 w-full shadow-lg hidden"></div>
-  </div>
+<div class="relative flex items-center gap-3">
+  <input type="text" id="live-search" placeholder="Type product name..."
+         class="flex-1 border rounded-xl p-3 focus:ring-2 focus:ring-blue-500 shadow-sm">
+  <button id="show-all-btn"
+          class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl shadow-md">
+    Show all products
+  </button>
+</div>
+
+<!-- suggestions (autocomplete) -->
+<div id="suggestions" class="absolute z-10 bg-white border rounded-xl mt-1 w-full shadow-lg hidden"></div>
+
+
 </div>
 
   {% if results %}
@@ -158,7 +165,36 @@
   </div>
   {% endif %}
 </div>
+<!-- All products modal -->
+<div id="allProductsModal" class="fixed inset-0 bg-black bg-opacity-40 hidden items-center justify-center z-50">
+  <div class="bg-white rounded-2xl w-11/12 max-w-6xl max-h-[80vh] overflow-hidden shadow-2xl">
+    <div class="flex items-center justify-between p-4 border-b">
+      <h3 class="text-lg font-semibold">All products</h3>
+      <div class="flex items-center gap-2">
+        <input id="allProductsFilter" type="text" placeholder="Filter by name..."
+               class="border rounded-full px-3 py-1 w-64">
+        <button id="closeAllProducts" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded">Close</button>
+      </div>
+    </div>
 
+    <div class="p-3 overflow-auto" style="max-height:70vh;">
+      <table id="allProductsTable" class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-100 sticky top-0">
+          <tr>
+            <th class="px-3 py-2 text-left">Barcode</th>
+            <th class="px-3 py-2 text-left">Name</th>
+            <th class="px-3 py-2 text-left">Tamil</th>
+            <th class="px-3 py-2 text-left">Measure</th>
+            <th class="px-3 py-2 text-left">Qty</th>
+            <th class="px-3 py-2 text-right">MRP</th>
+            <th class="px-3 py-2 text-right">Retail</th>
+          </tr>
+        </thead>
+        <tbody id="allProductsTbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
 
 <script>
   function focusName() {
@@ -327,6 +363,90 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// --- Show all products modal ---
+const showAllBtn = document.getElementById('show-all-btn');
+const allProductsModal = document.getElementById('allProductsModal');
+const allProductsTbody = document.getElementById('allProductsTbody');
+const closeAllBtn = document.getElementById('closeAllProducts');
+const allProductsFilter = document.getElementById('allProductsFilter');
+
+async function fetchAllProducts() {
+  try {
+    showAllBtn.disabled = true;
+    showAllBtn.textContent = 'Loading...';
+    const res = await fetch('/api/all_products');
+    const data = await res.json();
+    showAllBtn.disabled = false;
+    showAllBtn.textContent = 'Show all products';
+    if (data.error) {
+      alert('Error fetching products: ' + data.error);
+      return;
+    }
+    renderAllProducts(data);
+    allProductsModal.classList.remove('hidden');
+    allProductsModal.style.display = 'flex';
+    allProductsFilter.value = '';
+    allProductsFilter.focus();
+  } catch (err) {
+    showAllBtn.disabled = false;
+    showAllBtn.textContent = 'Show all products';
+    console.error(err);
+    alert('Failed to fetch products');
+  }
+}
+
+function renderAllProducts(products) {
+  // Store on the modal element for client-side filtering
+  allProductsModal._products = products;
+
+  const rows = products.map(p => `
+    <tr class="hover:bg-gray-50">
+      <td class="px-3 py-2 text-left">${p.barcode}</td>
+      <td class="px-3 py-2 text-left">${escapeHtml(p.name)}</td>
+      <td class="px-3 py-2 text-left">${escapeHtml(p.tamil_name)}</td>
+      <td class="px-3 py-2 text-left">${p.measure}</td>
+      <td class="px-3 py-2 text-left">${p.quantity}</td>
+      <td class="px-3 py-2 text-right">₹${Number(p.mrp).toFixed(2)}</td>
+      <td class="px-3 py-2 text-right">₹${Number(p.retail_price).toFixed(2)}</td>
+    </tr>
+  `).join('');
+  allProductsTbody.innerHTML = rows || `<tr><td colspan="7" class="p-4 text-center text-gray-500">No products</td></tr>`;
+}
+
+// filtering
+allProductsFilter.addEventListener('input', function() {
+  const q = this.value.trim().toLowerCase();
+  const products = allProductsModal._products || [];
+  if (!q) {
+    renderAllProducts(products);
+    return;
+  }
+  const filtered = products.filter(p => 
+    (p.name && p.name.toLowerCase().includes(q)) ||
+    (p.tamil_name && p.tamil_name.toLowerCase().includes(q)) ||
+    (p.barcode && p.barcode.toLowerCase().includes(q))
+  );
+  renderAllProducts(filtered);
+});
+
+// open/close handlers
+showAllBtn.addEventListener('click', fetchAllProducts);
+closeAllBtn.addEventListener('click', () => {
+  allProductsModal.classList.add('hidden');
+  allProductsModal.style.display = 'none';
+});
+allProductsModal.addEventListener('click', (e) => {
+  if (e.target === allProductsModal) {
+    allProductsModal.classList.add('hidden');
+    allProductsModal.style.display = 'none';
+  }
+});
+
+// small helper to avoid injection when rendering
+function escapeHtml(s) {
+  if (!s) return '';
+  return s.replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
 
 
 </script>

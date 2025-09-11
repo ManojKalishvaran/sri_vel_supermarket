@@ -1,3 +1,4 @@
+# app.py (updated)
 from flask import Flask, render_template, request, jsonify
 import sqlite3
 import os
@@ -251,24 +252,24 @@ def save_bill(bill_data, items_data):
         print(f"Database error: {e}")
         return False
 
-def format_thermal_bill(items, width=42):
-    header = f"{'Item':<16}{'Qty':>4}{'MRP':>6}{'Rate':>6}{'Total':>7}"
+def format_thermal_bill(items, width=38):
+    header = f"{'Item':<18}{'Qty':>4}{'Rate':>8}{'Total':>8}"
     line_sep = '=' * width
     lines = [line_sep, header, line_sep]
 
     for item in items:
-        name_lines = textwrap.wrap(item['product_name'], width=13) or ['']
+        # Wrap name to width of about 18 chars
+        name_lines = textwrap.wrap(item['product_name'], width=18) or ['']
         qty = str(item['quantity']).rjust(4)
-        mrp = f"{float(item['mrp']):.0f}".rjust(6)
-        rate = f"{float(item['retail_price']):.0f}".rjust(6)
-        total = f"{float(item['retail_price']) * int(item['quantity']):.0f}".rjust(6)
+        rate = f"{float(item['retail_price']):.2f}".rjust(8)
+        total = f"{float(item['total_price']):.2f}".rjust(8)
 
         # First line: product name + data
-        lines.append(f"{name_lines[0]:<16}{qty}{mrp}{rate}{total}")
+        lines.append(f"{name_lines[0]:<18}{qty}{rate}{total}")
 
-        # Remaining name lines (if any): just the name, no data
+        # Remaining name lines (if any): just the name
         for extra_line in name_lines[1:]:
-            lines.append(f"{extra_line:<16}")
+            lines.append(f"{extra_line:<18}")
         lines.append('-' * width)
 
     return '\n'.join(lines)
@@ -276,46 +277,55 @@ def format_thermal_bill(items, width=42):
 def generate_bill_string(bill_data, customer_data, items_data):
     WIDTH = 38  # For 58mm printer
     SEP = '_' * WIDTH
-    SEP2 = '- ' * 18
+    SEP2 = '-' * WIDTH
 
-    bill_string = f"""
-{SEP}
-      SRI VELAVAN SUPERMARKET
-{SEP}
-    2/136A, Pillaiyar Koil Street,
-   A.Kottarakuppam, Virudhachalam
-  Ph: 9626475471 GST:33FLEPM3791Q1ZD
-{SEP}
-பில் எண் : {bill_data['bill_number']}
-தேதி     : {bill_data['date']} {bill_data['time']}
-{SEP}
-வாடிக்கையாளர்:
-பெயர்    : {customer_data['name']}
-மொபைல்  : {customer_data['mobile']}
-புள்ளிகள்: {customer_data['points']}
-"""
-    bill_box = format_thermal_bill(items_data, 37)
-    bill_string += bill_box
+    # Header centered with minimal padding
+    header_lines = [
+        SEP,
+        "   SRI VELAVAN SUPERMARKET",
+        "   2/136A, Pillaiyar Koil Street",
+        "   A.Kottarakuppam, Virudhachalam",
+        "   Ph: 9626475471  GST:33FLEPM3791Q1ZD",
+        SEP2
+    ]
+    bill_string = '\n'.join(header_lines) + '\n'
+    bill_string += f"பில் எண் : {bill_data['bill_number']}\nதேதி     : {bill_data['date']} {bill_data['time']}\n{SEP2}\n"
 
-    bill_string += f"""
-மொத்த பொருட்கள் : {bill_data['total_unique_products']}
-மொத்த அளவு     : {bill_data['total_items']}
-மொத்தம்        : ₹{bill_data['subtotal']:.2f}
-சேமிப்பு       : ₹{bill_data['total_savings']:.2f}
-{SEP}
-பழைய நிலுவை    : ₹{bill_data['old_balance']:.2f}
-புதிய நிலுவை   : ₹{bill_data['new_balance']:.2f}
-{SEP}
-செலுத்தும் முறை: {bill_data['payment_type']}
-பெற்றது       : ₹{bill_data['cash_received']:.2f}
-திருப்பியது    : ₹{bill_data['cash_balance']:.2f}
-{SEP}
-சம்பாதித்த புள்ளிகள்: {bill_data['points_earned']}
-{SEP}
-     நன்றி! மீண்டும் வாருக்!
-{SEP}
-"""
-    return bill_string
+    bill_string += "வாடிக்கையாளர்:\n"
+    bill_string += f"பெயர்    : {customer_data['name']}\n"
+    # Only show mobile if provided
+    if customer_data.get('mobile') and customer_data.get('mobile') != 'N/A':
+        bill_string += f"மொபைல்  : {customer_data['mobile']}\n"
+        bill_string += f"புள்ளிகள்: {customer_data.get('points', 0)}\n"
+    bill_string += SEP2 + '\n'
+
+    bill_box = format_thermal_bill(items_data, WIDTH)
+    bill_string += bill_box + '\n'
+
+    bill_string += SEP2 + '\n'
+    bill_string += f"மொத்த பொருட்கள் : {bill_data['total_unique_products']}\n"
+    bill_string += f"மொத்த அளவு     : {bill_data['total_items']}\n"
+    bill_string += f"மொத்தம்        : ₹{bill_data['subtotal']:.2f}\n"
+    bill_string += f"சேமிப்பு       : ₹{bill_data['total_savings']:.2f}\n"
+
+    # Only show old/new balance when customer mobile exists
+    if bill_data.get('customer_mobile') and bill_data.get('customer_mobile') != 'N/A':
+        bill_string += SEP2 + '\n'
+        bill_string += f"பழைய நிலுவை    : ₹{bill_data['old_balance']:.2f}\n"
+        bill_string += f"புதிய நிலுவை   : ₹{bill_data['new_balance']:.2f}\n"
+
+    bill_string += SEP2 + '\n'
+    bill_string += f"செலுத்தும் முறை: {bill_data['payment_type']}\n"
+    bill_string += f"பெற்றது       : ₹{bill_data['cash_received']:.2f}\n"
+    bill_string += f"திருப்பியது    : ₹{bill_data['cash_balance']:.2f}\n"
+    bill_string += SEP2 + '\n'
+    bill_string += f"சம்பாதித்த புள்ளிகள்: {bill_data['points_earned']}\n"
+    bill_string += SEP2 + '\n'
+    bill_string += "     நன்றி! மீண்டும் வாருங்கள்!\n"
+    bill_string += SEP + '\n'
+
+    # strip any leading/trailing blank lines
+    return '\n'.join([line.rstrip() for line in bill_string.strip().splitlines()])
 
 @app.route('/')
 def index():
@@ -413,6 +423,22 @@ def get_products():
     products = get_product_list()
     return jsonify({'products': products})
 
+@app.route('/today_totals')
+def today_totals():
+    """Return total items sold today and total sales amount"""
+    try:
+        conn = sqlite3.connect(BILLS_DB)
+        cursor = conn.cursor()
+        today = datetime.now().strftime('%d/%m/%Y')
+        cursor.execute('SELECT IFNULL(SUM(total_items),0), IFNULL(SUM(subtotal),0) FROM bills WHERE date = ?', (today,))
+        row = cursor.fetchone()
+        conn.close()
+        total_items = int(row[0] or 0)
+        total_sales = float(row[1] or 0.0)
+        return jsonify({'date': today, 'total_items': total_items, 'total_sales': total_sales})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/create_bill', methods=['POST'])
 def create_bill():
     try:
@@ -460,14 +486,13 @@ def create_bill():
         new_balance = old_balance
         new_balance = old_balance + new_debt - settle_debt
         
-        
         # Handle payment
         cash_received = float(data['payment']['cash_received']) if data['payment']['cash_received'] else 0
         cash_balance = cash_received - subtotal 
-        print(f"before {new_balance = }")
 
-        new_balance = new_balance+abs(cash_balance) if cash_balance<0 else new_balance
-        print(f"after {new_balance = }")
+        # If cash_balance negative => customer still owes money -> add to new_balance
+        new_balance = new_balance + abs(cash_balance) if cash_balance < 0 else new_balance
+
         # Update customer data if mobile provided
         if data['customer']['mobile']:
             customer_data = {
@@ -523,7 +548,7 @@ def create_bill():
             # Generate bill string
             bill_string = generate_bill_string(bill_data, customer_data, items_data)
             
-            # Print bill automatically
+            # Print bill automatically (try/catch; if fails simply return bill_string)
             try:
                 receipt_text = bill_string
                 printer_name = win32print.GetDefaultPrinter()
@@ -534,7 +559,8 @@ def create_bill():
                 
                 x = 100
                 y = 100
-                line_height = 30
+                # use smaller line height for better fit on narrow rolls
+                line_height = 20
                 
                 for line in receipt_text.split("\n"):
                     hDC.TextOut(x, y, line)
