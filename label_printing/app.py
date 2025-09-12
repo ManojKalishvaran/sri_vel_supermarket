@@ -1,6 +1,5 @@
 # app_label_fix.py
-# Modified label-printing server to produce consistent, scanner-friendly labels.
-# Combines printing helper so it's a single file replacement for your previous app.py.
+# Full updated label-printing server (drop-in replacement)
 
 import io
 import os
@@ -14,7 +13,6 @@ from barcode import Code128
 from barcode.writer import ImageWriter
 
 import math
-
 
 # try to import win32 printing helpers when on Windows
 try:
@@ -33,20 +31,17 @@ DPI = 203  # R220 native DPI
 LABEL_W_MM = 32  # Label width (3.2 cm)
 LABEL_H_MM = 20  # Label height (2.0 cm)
 LABELS_PER_ROW = 3  # 3-up printing
-PAGE_MARGIN_MM = 2.0  # Minimal margins for thermal
-LABEL_SPACING_MM = 3.0  # Gap between labels
+
+# Margins/spacing - tweak these if your physical sheet differs
+PAGE_MARGIN_MM = 2.0          # outer page margin (both left & right by default)
+LABEL_SPACING_MM = 3.0        # gap between adjacent labels
+GLOBAL_X_OFFSET_MM = 0.0      # positive moves labels right, negative moves left (calibration)
+
 PX_PER_MM = DPI / 25.4  # Pixel density
 
-
-# Single label dimensions
-LABEL_W = int(LABEL_W_MM * PX_PER_MM)
-LABEL_H = int(LABEL_H_MM * PX_PER_MM)
-
-# Sheet dimensions
-PAGE_W_MM = PAGE_MARGIN_MM * 2 + LABEL_W_MM * LABELS_PER_ROW + LABEL_SPACING_MM * (LABELS_PER_ROW - 1)
-PAGE_H_MM = PAGE_MARGIN_MM * 2 + LABEL_H_MM
-PAGE_W = int(PAGE_W_MM * PX_PER_MM)
-PAGE_H = int(PAGE_H_MM * PX_PER_MM)
+# Single label dimensions (pixels)
+LABEL_W = int(round(LABEL_W_MM * PX_PER_MM))
+LABEL_H = int(round(LABEL_H_MM * PX_PER_MM))
 
 STORE_NAME_DEFAULT = "SRI VELAVAN SUPERMARKET"
 PRINTER_NAME = "Bar Code Printer R220"
@@ -90,37 +85,44 @@ def get_product_by_barcode(barcode: str) -> Dict[str, Any] | None:
 
 def _generate_barcode_pil(code_text: str) -> Image.Image:
     """
-    Generate a barcode optimized for thermal printer (R220) and reliable scanning:
-    - Uses optimal module width for 203 DPI
-    - Higher contrast with pure black/white
-    - Proper quiet zones for reliable scanning
+    Generate a barcode optimized for thermal printer (R220) and reliable scanning.
+    Tuned for 203 DPI: slightly larger module width & height, stable thresholding.
     """
-    # ensure length and digits
-    code_text = code_text.zfill(14)[:14]
+    # normalize to digits length
+    code_text = str(code_text or "").strip()
+    if not code_text.isdigit():
+        # keep whatever was provided, pad/truncate for deterministic result
+        code_text = code_text.zfill(14)[:14]
+    else:
+        code_text = code_text.zfill(14)[:14]
+
     barcode_obj = Code128(code_text, writer=ImageWriter())
     buf = io.BytesIO()
-    # Settings optimized for reliable barcode scanning
+
+    # Barcode writer options tuned for thermal printing
+    # module_width is in mm-ish units interpreted by the writer; DPI specified for scaling
     barcode_obj.write(buf, options={
-        "module_width": 0.25,    # Thinner bars for better resolution
-        "module_height": 12.0,   # Optimal height for scanning
-        "quiet_zone": 6.5,       # Standard quiet zone
-        "write_text": False,     # No text to avoid interference
-        "background": "white",   # Pure white background
-        "foreground": "black"    # Pure black bars
+        "module_width": 0.33,    # slightly wider for thermal head reliability
+        "module_height": 14.0,   # good vertical height for scanners
+        "quiet_zone": 4.0,       # a conservative quiet zone
+        "write_text": False,
+        "background": "white",
+        "foreground": "black",
+        "dpi": DPI
     })
     buf.seek(0)
-    img = Image.open(buf).convert("RGB")
 
-    # Convert to pure black/white to increase scanner contrast
-    img = img.convert("L")
-    img = img.point(lambda p: 0 if p < 200 else 255, mode="1").convert("RGB")
+    # open as grayscale for robust thresholding
+    img = Image.open(buf).convert("L")
 
-    # crop to non-white area but keep a small margin (quiet zone)
+    # threshold at 128 for crisp 1-bit black/white (avoid too-high threshold which can break bars)
+    img = img.point(lambda p: 0 if p < 128 else 255, mode="1").convert("RGB")
+
+    # Trim surrounding whitespace but keep a small padding as quiet zone
     bbox = img.convert("L").point(lambda p: 0 if p < 250 else 255).getbbox()
     if bbox:
         left, upper, right, lower = bbox
-        # expand a bit for quiet zone
-        pad = max(2, int(PX_PER_MM * 0.5))
+        pad = max(1, int(round(PX_PER_MM * 0.6)))  # ~0.6 mm padding
         left = max(0, left - pad)
         upper = max(0, upper - pad)
         right = min(img.width, right + pad)
@@ -129,45 +131,35 @@ def _generate_barcode_pil(code_text: str) -> Image.Image:
 
     return img
 
+
 def compose_label(product: Dict[str, Any],
                   store_name: str = STORE_NAME_DEFAULT,
                   exp: str = "") -> Image.Image:
     """
-    Formal, reference-style label:
-      - rounded white panel with thin border
-      - store name at top (center)
-      - centered barcode (kept to a moderate height)
-      - barcode digits under bars
-      - product name centered
-      - QTY (left) and Measure (right)
-      - MRP (left) and RP (right) emphasized
+    Compose a single label image sized exactly LABEL_W x LABEL_H (pixels).
+    Layout: rounded panel, store name, barcode, product name, info rows, price rows.
     """
-    # base image (white background)
     label = Image.new("RGB", (LABEL_W, LABEL_H), "white")
     draw = ImageDraw.Draw(label)
     cx = LABEL_W // 2
 
-    # inner panel (rounded rectangle) to give 'sticker' look like your reference
-    pad = max(4, int(PX_PER_MM * 0.8))
+    # inner panel
+    pad = max(2, int(round(PX_PER_MM * 0.6)))
     panel_box = (pad, pad, LABEL_W - pad, LABEL_H - pad)
-    corner_radius = max(6, int(PX_PER_MM * 1.2))
-    # panel fill white and subtle border for a formal look
+    corner_radius = max(3, int(round(PX_PER_MM * 0.8)))
     draw.rounded_rectangle(panel_box, radius=corner_radius, fill="white", outline="black", width=1)
 
-    # content start (inset inside the rounded panel)
-    content_x0 = pad + int(PX_PER_MM * 0.6)
-    content_x1 = LABEL_W - pad - int(PX_PER_MM * 0.6)
+    content_x0 = pad + int(round(PX_PER_MM * 0.4))
+    content_x1 = LABEL_W - pad - int(round(PX_PER_MM * 0.4))
     content_width = content_x1 - content_x0
-    y = pad + int(PX_PER_MM * 0.6)
+    y = pad + int(round(PX_PER_MM * 0.4))
 
-    # 1) Store name - single centered line, uppercase, clipped if needed
+    # Store name
     store_text = (store_name or STORE_NAME_DEFAULT).strip().upper()
     store_font = FONTS["bold"]
     max_store_w = content_width
     if draw.textlength(store_text, font=store_font) > max_store_w:
-        # fallback to smaller font
         store_font = FONTS["regular"]
-    # final clip/truncate if still too wide
     if draw.textlength(store_text, font=store_font) > max_store_w:
         # truncate with ellipsis
         while draw.textlength(store_text + "...", font=store_font) > max_store_w and len(store_text) > 3:
@@ -175,14 +167,13 @@ def compose_label(product: Dict[str, Any],
         store_text += "..."
     sw = draw.textlength(store_text, font=store_font)
     draw.text((cx - sw / 2, y), store_text, font=store_font, fill="black")
-    y += int(PX_PER_MM * 3.0)  # leave breathing room below store name
+    y += int(round(PX_PER_MM * 2.4))
 
-    # 2) Barcode - generate, then cap width and *height* so it doesn't dominate the label
+    # Barcode
     bc_img = _generate_barcode_pil(str(product.get("barcode", "")).strip() or "0000000000000")
-    # target max width/height for barcode inside panel
-    max_bc_w = int(content_width * 0.95)
-    max_bc_h = int(LABEL_H * 0.42)  # restrict height to maintain formal proportion
-    # scale down while keeping aspect
+    # Fit barcode within content width and a limited height fraction
+    max_bc_w = int(round(content_width * 0.95))
+    max_bc_h = int(round(LABEL_H * 0.42))
     w_ratio = max_bc_w / bc_img.width if bc_img.width > max_bc_w else 1.0
     h_ratio = max_bc_h / bc_img.height if bc_img.height > max_bc_h else 1.0
     ratio = min(w_ratio, h_ratio, 1.0)
@@ -193,27 +184,16 @@ def compose_label(product: Dict[str, Any],
 
     bc_x = cx - bc_img.width // 2
     label.paste(bc_img, (bc_x, y))
+    y = y + bc_img.height + int(round(PX_PER_MM * 0.16))
 
-    # barcode bottom
-    y = y + bc_img.height + int(PX_PER_MM * 0.2)
-
-    # # 2b) barcode digits (human readable) centered below barcode
-    # barcode_digits = str(product.get("barcode", "")).strip()
-    # if barcode_digits:
-    #     digits_font = FONTS["tiny"]
-    #     d_w = draw.textlength(barcode_digits, font=digits_font)
-    #     draw.text((cx - d_w / 2, y), barcode_digits, font=digits_font, fill="black")
-    #     y += int(PX_PER_MM * 1.2)
-
-    # 3) Product name - centered, up to two lines if necessary
+    # Product name (one or two lines)
     prod_name = str(product.get("name", "")).strip()
     name_font = FONTS["regular"]
     max_name_w = content_width
     if draw.textlength(prod_name, font=name_font) <= max_name_w:
         draw.text((cx - draw.textlength(prod_name, font=name_font) / 2, y), prod_name, font=name_font, fill="black")
-        y += int(PX_PER_MM * 2.0)
+        y += int(round(PX_PER_MM * 1.8))
     else:
-        # naive two-line wrap
         words = prod_name.split()
         line1 = ""
         line2 = ""
@@ -223,9 +203,8 @@ def compose_label(product: Dict[str, Any],
             else:
                 line2 = (line2 + " " + w).strip()
         if not line1:
-            line1 = prod_name[:int(len(prod_name)/2)]
-            line2 = prod_name[int(len(prod_name)/2):]
-        # truncate lines if still too long
+            line1 = prod_name[:int(len(prod_name) / 2)]
+            line2 = prod_name[int(len(prod_name) / 2):]
         def fit_line(s):
             while draw.textlength(s + "...", font=name_font) > max_name_w and len(s) > 3:
                 s = s[:-1]
@@ -233,42 +212,47 @@ def compose_label(product: Dict[str, Any],
         line1 = fit_line(line1)
         line2 = fit_line(line2) if line2 else ""
         draw.text((cx - draw.textlength(line1, font=name_font) / 2, y), line1, font=name_font, fill="black")
-        y += int(PX_PER_MM * 1.4)
+        y += int(round(PX_PER_MM * 1.1))
         if line2:
             draw.text((cx - draw.textlength(line2, font=name_font) / 2, y), line2, font=name_font, fill="black")
-            y += int(PX_PER_MM * 1.8)
+            y += int(round(PX_PER_MM * 1.6))
         else:
-            y += int(PX_PER_MM * 0.6)
+            y += int(round(PX_PER_MM * 0.6))
 
-    # 4) Info row: QTY (left) and Measure (right)
+    # Info row: QTY and Measure
     info_font = FONTS["tiny"]
     left_info = f"QTY: {product.get('quantity', '')}"
     right_info = f"{product.get('measure', '')}"
-    left_x = content_x0 + int(PX_PER_MM * 0.4)
-    right_x = content_x1 - int(PX_PER_MM * 0.4) - draw.textlength(right_info, font=info_font)
-    # guard against overlap
-    if right_x - (left_x + draw.textlength(left_info, font=info_font)) < int(PX_PER_MM * 2):
-        # make right shorter
+    left_x = content_x0 + int(round(PX_PER_MM * 0.3))
+    right_x = content_x1 - int(round(PX_PER_MM * 0.3)) - draw.textlength(right_info, font=info_font)
+    if right_x - (left_x + draw.textlength(left_info, font=info_font)) < int(round(PX_PER_MM * 1.6)):
         if len(right_info) > 6:
             right_info = right_info[:6] + "..."
-            right_x = content_x1 - int(PX_PER_MM * 0.4) - draw.textlength(right_info, font=info_font)
+            right_x = content_x1 - int(round(PX_PER_MM * 0.3)) - draw.textlength(right_info, font=info_font)
     draw.text((left_x, y), left_info, font=info_font, fill="black")
     draw.text((right_x, y), right_info, font=info_font, fill="black")
-    y += int(PX_PER_MM * 1.6)
+    y += int(round(PX_PER_MM * 1.4))
 
-    # 5) Price row: MRP left, RP right (emphasized)
+    # Price row: MRP and RP
     price_font = FONTS["bold"]
-    mrp_text = f"MRP: ₹{product.get('mrp', 0):g}"
-    rp_text = f"RP: ₹{product.get('retail_price', 0):g}"
-    left_x = content_x0 + int(PX_PER_MM * 0.4)
-    right_x = content_x1 - int(PX_PER_MM * 0.4) - draw.textlength(rp_text, font=price_font)
-    # fallback if overlap
-    if right_x - (left_x + draw.textlength(mrp_text, font=price_font)) < int(PX_PER_MM * 2):
+    try:
+        mrp_val = float(product.get("mrp", 0))
+    except Exception:
+        mrp_val = 0
+    try:
+        rp_val = float(product.get("retail_price", 0))
+    except Exception:
+        rp_val = 0
+    mrp_text = f"MRP: ₹{mrp_val:g}"
+    rp_text = f"RP: ₹{rp_val:g}"
+    left_x = content_x0 + int(round(PX_PER_MM * 0.3))
+    right_x = content_x1 - int(round(PX_PER_MM * 0.3)) - draw.textlength(rp_text, font=price_font)
+    if right_x - (left_x + draw.textlength(mrp_text, font=price_font)) < int(round(PX_PER_MM * 1.6)):
         price_font = FONTS["regular"]
-        right_x = content_x1 - int(PX_PER_MM * 0.4) - draw.textlength(rp_text, font=price_font)
+        right_x = content_x1 - int(round(PX_PER_MM * 0.3)) - draw.textlength(rp_text, font=price_font)
     draw.text((left_x, y), mrp_text, font=price_font, fill="black")
     draw.text((right_x, y), rp_text, font=price_font, fill="black")
-    y += int(PX_PER_MM * 1.0)
+    y += int(round(PX_PER_MM * 0.8))
 
     return label
 
@@ -324,80 +308,71 @@ def preview_label():
 
 def compose_sheet(product: Dict[str, Any], count: int, store_name: str = STORE_NAME_DEFAULT, exp: str = "") -> Image.Image:
     """
-    Compose a sheet that places labels in fixed, identical positions,
-    with exactly LABELS_PER_ROW labels per row (mandatory).
-    The sheet height is computed to fit `count` labels.
-    Blank spaces remain white if count does not fill the final row.
+    Compose a sheet with exactly LABELS_PER_ROW per row, rows computed automatically.
+    Applies a global X offset (in mm) for calibration of physical sheets.
     """
-    # calculate number of rows required (always ceil)
     rows = math.ceil(max(1, count) / LABELS_PER_ROW)
 
-    # compute sheet pixel dimensions dynamically
-    margin_x = int(PAGE_MARGIN_MM * PX_PER_MM)
-    margin_y = int(PAGE_MARGIN_MM * PX_PER_MM)
-    spacing = int(LABEL_SPACING_MM * PX_PER_MM)
+    # dynamic pixel values
+    margin_x = int(round(PAGE_MARGIN_MM * PX_PER_MM))
+    margin_y = int(round(PAGE_MARGIN_MM * PX_PER_MM))
+    spacing = int(round(LABEL_SPACING_MM * PX_PER_MM))
+    global_x_offset = int(round(GLOBAL_X_OFFSET_MM * PX_PER_MM))
 
     sheet_w = margin_x * 2 + LABEL_W * LABELS_PER_ROW + spacing * (LABELS_PER_ROW - 1)
     sheet_h = margin_y * 2 + LABEL_H * rows + spacing * (rows - 1)
 
     sheet = Image.new("RGB", (sheet_w, sheet_h), "white")
 
-    # pre-compose single label so all labels are identical
+    # create a single label image and paste multiple times
     label_img = compose_label(product, store_name=store_name, exp=exp)
 
-    # paste labels in exact grid positions: left-to-right, top-to-bottom
     pasted = 0
     for r in range(rows):
         for c in range(LABELS_PER_ROW):
             if pasted >= count:
-                # leave blank if no more labels requested (ensures consistent positions)
                 pasted += 1
                 continue
-            x = margin_x + c * (LABEL_W + spacing)
+            x = margin_x + c * (LABEL_W + spacing) + global_x_offset
             y = margin_y + r * (LABEL_H + spacing)
             sheet.paste(label_img, (x, y))
             pasted += 1
 
     return sheet
 
+
 def print_image_windows(image_path: str, title: str = "Label Print", printer_name: str = None):
-    """Optimized print helper for Rongta R220 thermal printer.
-    - Uses exact 203 DPI scaling
-    - No margins (thermal printer handles spacing)
-    - Pure black/white output
-    """
+    """Windows printing helper for Rongta R220 thermal printer."""
     if not WINDOWS_PRINTING_AVAILABLE:
         raise RuntimeError("Windows printing is not available on this system.")
 
     if not printer_name:
         printer_name = win32print.GetDefaultPrinter()
 
-    # Open and ensure pure black/white for thermal printing
+    # Open and threshold to pure B/W for thermal printing
     img = Image.open(image_path)
-    if img.mode != '1':  # If not already black/white
-        img = img.convert('L')  # Convert to grayscale
-        img = img.point(lambda x: 0 if x < 128 else 255, '1')  # Threshold to pure B/W
+    if img.mode != '1':
+        img = img.convert('L')
+        img = img.point(lambda x: 0 if x < 128 else 255, '1')
 
     hDC = win32ui.CreateDC()
     hDC.CreatePrinterDC(printer_name)
 
-    # For R220 we want exact size output
+    # For R220 we want exact size output by converting image pixels using device DPI
     dpi_x = hDC.GetDeviceCaps(88)  # LOGPIXELSX
     dpi_y = hDC.GetDeviceCaps(90)  # LOGPIXELSY
-    
+
     # Convert image size to printer's native DPI
     img_w = int(img.width * dpi_x / DPI)
     img_h = int(img.height * dpi_y / DPI)
-    
+
     if img.size != (img_w, img_h):
         img = img.resize((img_w, img_h), Image.Resampling.NEAREST)
 
-    # For thermal printer, we want exact positioning
     hDC.StartDoc(title)
     hDC.StartPage()
 
     dib = ImageWin.Dib(img)
-    # Print at exact position with no margins
     dib.draw(hDC.GetHandleOutput(), (0, 0, img_w, img_h))
 
     hDC.EndPage()
@@ -420,13 +395,11 @@ def api_print():
     if not product:
         return jsonify({"ok": False, "error": "product not found"}), 404
 
-    # Compose a sheet with exactly 3 labels per row (rows auto-computed)
+    # Compose a sheet and save temporarily
     sheet = compose_sheet(product, count, store_name=store, exp=exp)
     tmp_path = os.path.abspath("label_sheet.png")
-    # save with DPI so printer scales correctly
     sheet.save(tmp_path, format="PNG", dpi=(DPI, DPI))
 
-    # rest of your printing logic unchanged...
     printed = 0
     errors = []
     try:
@@ -451,6 +424,79 @@ def api_print():
         "printed": printed,
         "errors": errors
     }), (200 if printed == count else 500)
+
+
+@app.get("/calibrate")
+def calibrate():
+    """
+    Return a visual calibration sheet (PNG) for testing offsets & spacing.
+    Query params:
+      - offset_mm: override GLOBAL_X_OFFSET_MM for preview
+      - spacing_mm: override LABEL_SPACING_MM for preview
+      - count: how many labels to show (default 3)
+    """
+    try:
+        offset_mm = float(request.args.get("offset_mm", GLOBAL_X_OFFSET_MM))
+    except Exception:
+        offset_mm = GLOBAL_X_OFFSET_MM
+    try:
+        spacing_mm = float(request.args.get("spacing_mm", LABEL_SPACING_MM))
+    except Exception:
+        spacing_mm = LABEL_SPACING_MM
+    try:
+        count = int(request.args.get("count", 3))
+    except Exception:
+        count = 3
+
+    # small sample product
+    sample = {
+        "barcode": "123456789012",
+        "name": "Aachi Chicken Masala",
+        "measure": "PC",
+        "quantity": 1,
+        "mrp": 39,
+        "retail_price": 38
+    }
+
+    # temporary override global vars for rendering the preview
+    old_spacing = LABEL_SPACING_MM
+    old_offset = GLOBAL_X_OFFSET_MM
+    try:
+        # local compute using supplied params
+        margin_x = int(round(PAGE_MARGIN_MM * PX_PER_MM))
+        margin_y = int(round(PAGE_MARGIN_MM * PX_PER_MM))
+        spacing = int(round(spacing_mm * PX_PER_MM))
+        global_x_offset = int(round(offset_mm * PX_PER_MM))
+
+        rows = math.ceil(max(1, count) / LABELS_PER_ROW)
+        sheet_w = margin_x * 2 + LABEL_W * LABELS_PER_ROW + spacing * (LABELS_PER_ROW - 1)
+        sheet_h = margin_y * 2 + LABEL_H * rows + spacing * (rows - 1)
+        sheet = Image.new("RGB", (sheet_w, sheet_h), "white")
+
+        # Draw boxes for label positions and paste sample labels
+        label_img = compose_label(sample)
+        draw = ImageDraw.Draw(sheet)
+        pasted = 0
+        for r in range(rows):
+            for c in range(LABELS_PER_ROW):
+                x = margin_x + c * (LABEL_W + spacing) + global_x_offset
+                y = margin_y + r * (LABEL_H + spacing)
+                # draw rectangle guide
+                draw.rectangle((x, y, x + LABEL_W - 1, y + LABEL_H - 1), outline="red", width=1)
+                if pasted < count:
+                    sheet.paste(label_img, (x, y))
+                # write small index
+                draw.text((x + 2, y + 2), str(pasted + 1), font=FONTS["tiny"], fill="red")
+                pasted += 1
+
+        buf = io.BytesIO()
+        sheet.save(buf, format="PNG", dpi=(DPI, DPI))
+        buf.seek(0)
+        return send_file(buf, mimetype="image/png")
+    finally:
+        LABEL_SPACING_MM = old_spacing
+        GLOBAL_X_OFFSET_MM = old_offset
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True)
