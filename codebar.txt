@@ -396,12 +396,10 @@ def api_print():
 
 if __name__ == "__main__":
     # Print configuration info on startup
-    print(f"=== Label Printer Configuration ===")
-    print(f"Paper width: {PAPER_WIDTH_MM}mm")
-    print(f"Printable width: {PRINTABLE_WIDTH_MM}mm") 
-    print(f"Label size: {LABEL_W_MM:.1f}mm x {LABEL_H_MM:.1f}mm")
+    print(f"=== Pre-Cut Label Configuration ===")
+    print(f"Individual label size: {LABEL_W_MM}mm x {LABEL_H_MM}mm (32mm x 20mm)")
     print(f"Labels per row: {LABELS_PER_ROW}")
-    print(f"Spacing between labels: {LABEL_SPACING_MM}mm")
-    print(f"Total width needed: {CALCULATED_WIDTH:.1f}mm")
-    print("====================================")
+    print(f"Total sheet width: {PAGE_W_MM}mm ({LABELS_PER_ROW} × {LABEL_W_MM}mm)")
+    print(f"No spacing - labels are pre-cut")
+    print("=====================================")
     app.run(host="0.0.0.0", port=5001, debug=True)
