@@ -30,12 +30,13 @@ DB_PATH = r"Data\products.db"
 
 # Rongta R220 printer settings
 DPI = 203  # R220 native DPI
-LABEL_W_MM = 40  # Label width
-LABEL_H_MM = 25  # Label height
+LABEL_W_MM = 32  # Label width (3.2 cm)
+LABEL_H_MM = 20  # Label height (2.0 cm)
 LABELS_PER_ROW = 3  # 3-up printing
 PAGE_MARGIN_MM = 2.0  # Minimal margins for thermal
 LABEL_SPACING_MM = 3.0  # Gap between labels
 PX_PER_MM = DPI / 25.4  # Pixel density
+
 
 # Single label dimensions
 LABEL_W = int(LABEL_W_MM * PX_PER_MM)
