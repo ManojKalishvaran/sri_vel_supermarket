@@ -1,0 +1,335 @@
+# app_label_fix.py
+# Modified label-printing server to produce consistent, scanner-friendly labels.
+# Combines printing helper so it's a single file replacement for your previous app.py.
+
+import io
+import os
+import sqlite3
+from datetime import datetime
+from typing import Dict, Any
+
+from flask import Flask, jsonify, request, send_file, render_template
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+from barcode import Code128
+from barcode.writer import ImageWriter
+
+import math
+
+
+# try to import win32 printing helpers when on Windows
+try:
+    import win32print
+    import win32ui
+    from PIL import ImageWin
+    WINDOWS_PRINTING_AVAILABLE = True
+except Exception:
+    WINDOWS_PRINTING_AVAILABLE = False
+
+# ---------- Config ----------
+DB_PATH = r"Data\products.db"
+
+# Rongta R220 printer settings
+DPI = 203  # R220 native DPI
+LABEL_W_MM = 40  # Label width in millimetres (adjust to your actual label width)
+LABEL_H_MM = 25  # Label height in millimetres (adjust to your actual label height)
+LABELS_PER_ROW = 3  # target: 3 labels per row
+PAGE_MARGIN_MM = 2.0  # Minimal margins for thermal (left+right)
+LABEL_SPACING_MM = 3.0  # Horizontal gap between labels (and vertical gap between rows)
+PX_PER_MM = DPI / 25.4  # Pixel density
+
+# Single label dimensions (pixels)
+LABEL_W = int(LABEL_W_MM * PX_PER_MM)
+LABEL_H = int(LABEL_H_MM * PX_PER_MM)
+
+# Sheet dimensions (calculated for one row height; compose_sheet will allow multiple rows)
+PAGE_W_MM = PAGE_MARGIN_MM * 2 + LABEL_W_MM * LABELS_PER_ROW + LABEL_SPACING_MM * (LABELS_PER_ROW - 1)
+PAGE_H_MM = PAGE_MARGIN_MM * 2 + LABEL_H_MM
+PAGE_W = int(PAGE_W_MM * PX_PER_MM)
+PAGE_H = int(PAGE_H_MM * PX_PER_MM)
+
+STORE_NAME_DEFAULT = "SRI VELAVAN SUPERMARKET"
+PRINTER_NAME = "Bar Code Printer R220"
+
+# load fonts (fallback to default if not found)
+FONTS = {}
+try:
+    FONTS["bold"] = ImageFont.truetype("label_printing/static/Inter_24pt-Bold.ttf", 18)
+    FONTS["regular"] = ImageFont.truetype("label_printing/static/Inter_18pt-Regular.ttf", 16)
+    FONTS["tiny"] = ImageFont.truetype("label_printing/static/Inter_18pt-Regular.ttf", 14)
+except Exception:
+    FONTS["bold"] = ImageFont.load_default()
+    FONTS["regular"] = ImageFont.load_default()
+    FONTS["tiny"] = ImageFont.load_default()
+
+# ---------- App ----------
+app = Flask(__name__)
+
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def query_products_by_name(q: str, limit: int = 20):
+    with get_db() as conn:
+        cur = conn.execute(
+            "SELECT * FROM products WHERE name LIKE ? ORDER BY name LIMIT ?",
+            (f"%{q}%", limit),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def get_product_by_barcode(barcode: str) -> Dict[str, Any] | None:
+    with get_db() as conn:
+        cur = conn.execute("SELECT * FROM products WHERE barcode = ?", (barcode,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def _generate_barcode_pil(code_text: str) -> Image.Image:
+    """
+    Generate a barcode optimized for thermal printer (R220) and reliable scanning:
+    """
+    code_text = code_text.zfill(14)[:14]
+    barcode_obj = Code128(code_text, writer=ImageWriter())
+    buf = io.BytesIO()
+    barcode_obj.write(buf, options={
+        "module_width": 0.25,
+        "module_height": 12.0,
+        "quiet_zone": 6.5,
+        "write_text": False,
+        "background": "white",
+        "foreground": "black"
+    })
+    buf.seek(0)
+    img = Image.open(buf).convert("RGB")
+    img = img.convert("L")
+    img = img.point(lambda p: 0 if p < 200 else 255, mode="1").convert("RGB")
+    bbox = img.convert("L").point(lambda p: 0 if p < 250 else 255).getbbox()
+    if bbox:
+        left, upper, right, lower = bbox
+        pad = max(2, int(PX_PER_MM * 0.5))
+        left = max(0, left - pad)
+        upper = max(0, upper - pad)
+        right = min(img.width, right + pad)
+        lower = min(img.height, lower + pad)
+        img = img.crop((left, upper, right, lower))
+    return img
+
+def compose_label(product: Dict[str, Any],
+                  store_name: str = STORE_NAME_DEFAULT,
+                  exp: str = "") -> Image.Image:
+    """
+    Draws a single label with store name, barcode, product info, and prices.
+    """
+    label = Image.new("RGB", (LABEL_W, LABEL_H), "white")
+    draw = ImageDraw.Draw(label)
+    cx = LABEL_W // 2
+
+    pad = max(4, int(PX_PER_MM * 0.8))
+    panel_box = (pad, pad, LABEL_W - pad, LABEL_H - pad)
+    corner_radius = max(6, int(PX_PER_MM * 1.2))
+    draw.rounded_rectangle(panel_box, radius=corner_radius, fill="white", outline="black", width=1)
+
+    content_x0 = pad + int(PX_PER_MM * 0.6)
+    content_x1 = LABEL_W - pad - int(PX_PER_MM * 0.6)
+    content_width = content_x1 - content_x0
+    y = pad + int(PX_PER_MM * 0.6)
+
+    store_text = (store_name or STORE_NAME_DEFAULT).strip().upper()
+    store_font = FONTS["bold"]
+    if draw.textlength(store_text, font=store_font) > content_width:
+        store_font = FONTS["regular"]
+    sw = draw.textlength(store_text, font=store_font)
+    draw.text((cx - sw / 2, y), store_text, font=store_font, fill="black")
+    y += int(PX_PER_MM * 3.0)
+
+    bc_img = _generate_barcode_pil(str(product.get("barcode", "")).strip() or "0000000000000")
+    max_bc_w = int(content_width * 0.95)
+    max_bc_h = int(LABEL_H * 0.42)
+    w_ratio = max_bc_w / bc_img.width if bc_img.width > max_bc_w else 1.0
+    h_ratio = max_bc_h / bc_img.height if bc_img.height > max_bc_h else 1.0
+    ratio = min(w_ratio, h_ratio, 1.0)
+    if ratio < 1.0:
+        new_w = max(1, int(bc_img.width * ratio))
+        new_h = max(1, int(bc_img.height * ratio))
+        bc_img = bc_img.resize((new_w, new_h), Image.Resampling.NEAREST)
+
+    bc_x = cx - bc_img.width // 2
+    label.paste(bc_img, (bc_x, y))
+    y = y + bc_img.height + int(PX_PER_MM * 0.2)
+
+    prod_name = str(product.get("name", "")).strip()
+    name_font = FONTS["regular"]
+    if draw.textlength(prod_name, font=name_font) <= content_width:
+        draw.text((cx - draw.textlength(prod_name, font=name_font) / 2, y), prod_name, font=name_font, fill="black")
+        y += int(PX_PER_MM * 2.0)
+
+    price_font = FONTS["bold"]
+    mrp_text = f"MRP: ₹{product.get('mrp', 0):g}"
+    rp_text = f"RP: ₹{product.get('retail_price', 0):g}"
+    left_x = content_x0 + int(PX_PER_MM * 0.4)
+    right_x = content_x1 - int(PX_PER_MM * 0.4) - draw.textlength(rp_text, font=price_font)
+    draw.text((left_x, y), mrp_text, font=price_font, fill="black")
+    draw.text((right_x, y), rp_text, font=price_font, fill="black")
+
+    return label
+
+
+@app.get("/")
+def index():
+    return render_template("index.html", store_name=STORE_NAME_DEFAULT)
+
+
+@app.get("/api/products")
+def api_products():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify([])
+    rows = query_products_by_name(q)
+    results = [{
+        "barcode": r["barcode"],
+        "name": r["name"],
+        "measure": r["measure"],
+        "quantity": r["quantity"],
+        "mrp": r["mrp"],
+        "retail_price": r["retail_price"],
+    } for r in rows]
+    return jsonify(results)
+
+
+@app.get("/preview")
+def preview_label():
+    barcode = request.args.get("barcode")
+    store = request.args.get("store", STORE_NAME_DEFAULT)
+    exp = request.args.get("exp", "")
+
+    if barcode:
+        product = get_product_by_barcode(barcode)
+        if not product:
+            return "Product not found", 404
+    else:
+        product = {
+            "barcode": request.args.get("code", "0000000000000"),
+            "name": request.args.get("name", "Sample"),
+            "measure": request.args.get("measure", "KG"),
+            "quantity": float(request.args.get("quantity", "1.0")),
+            "mrp": float(request.args.get("mrp", "0")),
+            "retail_price": float(request.args.get("retail_price", "0")),
+        }
+
+    img = compose_label(product, store_name=store, exp=exp)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", dpi=(DPI, DPI))
+    buf.seek(0)
+    return send_file(buf, mimetype="image/png")
+
+
+def compose_sheet(product: Dict[str, Any], count: int, store_name: str = STORE_NAME_DEFAULT, exp: str = "") -> Image.Image:
+    """
+    Place labels in fixed positions, each with a unique barcode suffix so scanners can read all.
+    """
+    rows = math.ceil(max(1, count) / LABELS_PER_ROW)
+
+    margin_x = int(PAGE_MARGIN_MM * PX_PER_MM)
+    margin_y = int(PAGE_MARGIN_MM * PX_PER_MM)
+    spacing = int(LABEL_SPACING_MM * PX_PER_MM)
+
+    sheet_w = margin_x * 2 + LABEL_W * LABELS_PER_ROW + spacing * (LABELS_PER_ROW - 1)
+    sheet_h = margin_y * 2 + LABEL_H * rows + spacing * (rows - 1)
+
+    sheet = Image.new("RGB", (sheet_w, sheet_h), "white")
+
+    pasted = 0
+    for r in range(rows):
+        for c in range(LABELS_PER_ROW):
+            if pasted >= count:
+                pasted += 1
+                continue
+            prod_copy = dict(product)
+            # Append row+col index to barcode so each one is unique
+            prod_copy["barcode"] = str(product["barcode"]).zfill(12) + str(r) + str(c)
+            label_img = compose_label(prod_copy, store_name=store_name, exp=exp)
+
+            x = margin_x + c * (LABEL_W + spacing)
+            y = margin_y + r * (LABEL_H + spacing)
+            sheet.paste(label_img, (x, y))
+            pasted += 1
+
+    return sheet
+
+
+def print_image_windows(image_path: str, title: str = "Label Print", printer_name: str = None):
+    if not WINDOWS_PRINTING_AVAILABLE:
+        raise RuntimeError("Windows printing is not available on this system.")
+    if not printer_name:
+        printer_name = win32print.GetDefaultPrinter()
+    img = Image.open(image_path)
+    if img.mode != '1':
+        img = img.convert('L')
+        img = img.point(lambda x: 0 if x < 128 else 255, '1')
+    hDC = win32ui.CreateDC()
+    hDC.CreatePrinterDC(printer_name)
+    dpi_x = hDC.GetDeviceCaps(88)
+    dpi_y = hDC.GetDeviceCaps(90)
+    img_w = int(img.width * dpi_x / DPI)
+    img_h = int(img.height * dpi_y / DPI)
+    if img.size != (img_w, img_h):
+        img = img.resize((img_w, img_h), Image.Resampling.NEAREST)
+    hDC.StartDoc(title)
+    hDC.StartPage()
+    dib = ImageWin.Dib(img)
+    dib.draw(hDC.GetHandleOutput(), (0, 0, img_w, img_h))
+    hDC.EndPage()
+    hDC.EndDoc()
+    hDC.DeleteDC()
+
+
+@app.post("/api/print")
+def api_print():
+    data = request.get_json(force=True)
+    barcode = (data.get("barcode") or "").strip()
+    count = int(data.get("count") or 1)
+    store = (data.get("store_name") or STORE_NAME_DEFAULT).strip()
+    exp = (data.get("exp") or "").strip()
+
+    if not barcode:
+        return jsonify({"ok": False, "error": "barcode is required"}), 400
+
+    product = get_product_by_barcode(barcode)
+    if not product:
+        return jsonify({"ok": False, "error": "product not found"}), 404
+
+    sheet = compose_sheet(product, count, store_name=store, exp=exp)
+    tmp_path = os.path.abspath("label_sheet.png")
+    sheet.save(tmp_path, format="PNG", dpi=(DPI, DPI))
+
+    printed = 0
+    errors = []
+    try:
+        print_image_windows(tmp_path, title="Labels", printer_name=PRINTER_NAME)
+        printed = count
+    except Exception as e:
+        available = []
+        try:
+            available = [p[2] for p in win32print.EnumPrinters(2)]
+        except Exception:
+            pass
+        errors.append(f"{str(e)} | Available printers: {available}")
+        printed = 0
+
+    try:
+        os.remove(tmp_path)
+    except Exception:
+        pass
+
+    return jsonify({
+        "ok": printed == count,
+        "printed": printed,
+        "errors": errors
+    }), (200 if printed == count else 500)
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5001, debug=True)
