@@ -1,5 +1,10 @@
 # app_label_fix.py
 # Full updated label-printing server (drop-in replacement)
+# Fixes:
+#  - label size matched to 32mm x 20mm
+#  - GLOBAL_X_OFFSET_MM for horizontal calibration
+#  - improved barcode generation for 203 DPI thermal printers
+#  - /calibrate route for on-screen alignment tests
 
 import io
 import os
@@ -100,9 +105,9 @@ def _generate_barcode_pil(code_text: str) -> Image.Image:
     buf = io.BytesIO()
 
     # Barcode writer options tuned for thermal printing
-    # module_width is in mm-ish units interpreted by the writer; DPI specified for scaling
+    # module_width is in units interpreted by writer; DPI specified for scaling
     barcode_obj.write(buf, options={
-        "module_width": 0.33,    # slightly wider for thermal head reliability
+        "module_width": 0.33,    # slightly wider for thermal head reliability (tune 0.30-0.40)
         "module_height": 14.0,   # good vertical height for scanners
         "quiet_zone": 4.0,       # a conservative quiet zone
         "write_text": False,
@@ -458,44 +463,37 @@ def calibrate():
         "retail_price": 38
     }
 
-    # temporary override global vars for rendering the preview
-    old_spacing = LABEL_SPACING_MM
-    old_offset = GLOBAL_X_OFFSET_MM
-    try:
-        # local compute using supplied params
-        margin_x = int(round(PAGE_MARGIN_MM * PX_PER_MM))
-        margin_y = int(round(PAGE_MARGIN_MM * PX_PER_MM))
-        spacing = int(round(spacing_mm * PX_PER_MM))
-        global_x_offset = int(round(offset_mm * PX_PER_MM))
+    # local compute using supplied params
+    margin_x = int(round(PAGE_MARGIN_MM * PX_PER_MM))
+    margin_y = int(round(PAGE_MARGIN_MM * PX_PER_MM))
+    spacing = int(round(spacing_mm * PX_PER_MM))
+    global_x_offset = int(round(offset_mm * PX_PER_MM))
 
-        rows = math.ceil(max(1, count) / LABELS_PER_ROW)
-        sheet_w = margin_x * 2 + LABEL_W * LABELS_PER_ROW + spacing * (LABELS_PER_ROW - 1)
-        sheet_h = margin_y * 2 + LABEL_H * rows + spacing * (rows - 1)
-        sheet = Image.new("RGB", (sheet_w, sheet_h), "white")
+    rows = math.ceil(max(1, count) / LABELS_PER_ROW)
+    sheet_w = margin_x * 2 + LABEL_W * LABELS_PER_ROW + spacing * (LABELS_PER_ROW - 1)
+    sheet_h = margin_y * 2 + LABEL_H * rows + spacing * (rows - 1)
+    sheet = Image.new("RGB", (sheet_w, sheet_h), "white")
 
-        # Draw boxes for label positions and paste sample labels
-        label_img = compose_label(sample)
-        draw = ImageDraw.Draw(sheet)
-        pasted = 0
-        for r in range(rows):
-            for c in range(LABELS_PER_ROW):
-                x = margin_x + c * (LABEL_W + spacing) + global_x_offset
-                y = margin_y + r * (LABEL_H + spacing)
-                # draw rectangle guide
-                draw.rectangle((x, y, x + LABEL_W - 1, y + LABEL_H - 1), outline="red", width=1)
-                if pasted < count:
-                    sheet.paste(label_img, (x, y))
-                # write small index
-                draw.text((x + 2, y + 2), str(pasted + 1), font=FONTS["tiny"], fill="red")
-                pasted += 1
+    # Draw boxes for label positions and paste sample labels
+    label_img = compose_label(sample)
+    draw = ImageDraw.Draw(sheet)
+    pasted = 0
+    for r in range(rows):
+        for c in range(LABELS_PER_ROW):
+            x = margin_x + c * (LABEL_W + spacing) + global_x_offset
+            y = margin_y + r * (LABEL_H + spacing)
+            # draw rectangle guide
+            draw.rectangle((x, y, x + LABEL_W - 1, y + LABEL_H - 1), outline="red", width=1)
+            if pasted < count:
+                sheet.paste(label_img, (x, y))
+            # write small index
+            draw.text((x + 2, y + 2), str(pasted + 1), font=FONTS["tiny"], fill="red")
+            pasted += 1
 
-        buf = io.BytesIO()
-        sheet.save(buf, format="PNG", dpi=(DPI, DPI))
-        buf.seek(0)
-        return send_file(buf, mimetype="image/png")
-    finally:
-        LABEL_SPACING_MM = old_spacing
-        GLOBAL_X_OFFSET_MM = old_offset
+    buf = io.BytesIO()
+    sheet.save(buf, format="PNG", dpi=(DPI, DPI))
+    buf.seek(0)
+    return send_file(buf, mimetype="image/png")
 
 
 if __name__ == "__main__":
