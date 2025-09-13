@@ -103,7 +103,7 @@ def _generate_barcode_pil(code_text: str) -> Image.Image:
     # Wider module_width (0.40) for thicker bars on thermal head,
     # module_height increased slightly to give barcode ample vertical stroke for scanning.
     barcode_obj.write(buf, options={
-        "module_width": 0.40,    # increased from 0.33 to 0.40 for sturdier bars
+        "module_width": 0.60,    # increased from 0.33 to 0.40 for sturdier bars
         "module_height": 16.0,   # a bit taller to help cheap scanners
         "quiet_zone": 4.0,       # quiet zone (tunable)
         "write_text": False,
