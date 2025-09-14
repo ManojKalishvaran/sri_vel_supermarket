@@ -70,10 +70,16 @@
 <body>
     <div class="container">
         <div class="header">
-            <div>
-                <h1>SHRI VELAVAN SUPER MARKET</h1>
-                <div style="font-size:12px; opacity:0.9;">Billing System</div>
-            </div>
+    <div style="display:flex; align-items:center; gap:12px;">
+        <button id="newBillBtn" class="btn" title="புதிய பில் - புதிய வாடிக்கையாளர் (open in new tab)" onclick="openNewBill()">
+            புதிய பில்
+        </button>
+        <div>
+            <h1>SHRI VELAVAN SUPER MARKET</h1>
+            <div style="font-size:12px; opacity:0.9;">Billing System</div>
+        </div>
+    </div>
+
             <div class="status-card" id="todayStatus">
                 Today's: <br>
                 Items sold: <span id="todayItems">0</span><br>
@@ -249,12 +255,17 @@
         let currentCustomer = null;
         let productList = [];
         let editingIndex = -1; // -1 means not editing
+        let currentProductTamilName = '';
 
         // Load product list
         function loadProductList() {
             fetch('/get_products')
                 .then(r => r.json())
-                .then(data => productList = data.products || [])
+                .then(data => {
+                    // productList will be array of {name, tamil_name}
+                    productList = data.products || [];
+                })
+
                 .catch(err => console.error(err));
         }
 
@@ -341,8 +352,15 @@
         }
 
         function fillProductDetails(product) {
+            // product: { name, tamil_name, measure, mrp, retail_price }
             document.getElementById('mrp').value = product.mrp.toFixed(2);
             document.getElementById('retailPrice').value = product.retail_price.toFixed(2);
+            currentProductTamilName = product.tamil_name || '';
+            // keep productName input as English to help staff type/search
+            if (!document.getElementById('productName').value) {
+                document.getElementById('productName').value = product.name || product.tamil_name || '';
+            }
+
             const measureUnit = (product.measure || '').toLowerCase();
             const unitSelect = document.getElementById('unit');
             if (measureUnit.includes('kg')) unitSelect.value = 'kg';
@@ -350,6 +368,7 @@
             else if (measureUnit.includes('l')) unitSelect.value = 'l';
             else unitSelect.value = 'count';
         }
+
 
 function addItem() {
     const name = document.getElementById('productName').value.trim();
@@ -364,7 +383,7 @@ function addItem() {
         return;
     }
     if (quantity <= 0) { showAlert('அளவு 0 விட அதிகமாக இருக்க வேண்டும்', 'error'); return; }
-    if (retailPrice > mrp) { showAlert('விற்பனை விலை எம்.ஆர்.பி.யை விட அதிகம் இல்லை', 'error'); return; }
+    if (retailPrice > mrp) { showAlert('விற்பனை விலை எம்.ஆர்.பி.யை விட அதிகம் இருக்கக் கூடாது', 'error'); return; }
 
     // EDITING: update the existing item exactly
     if (editingIndex !== -1 && items[editingIndex]) {
@@ -397,13 +416,15 @@ function addItem() {
         showAlert('பொருள் அளவு புதுப்பிக்கப்பட்டது');
     } else {
         items.push({
-            name: name,
+            name: name,  // english used internally
+            tamil_name: currentProductTamilName || '', // may be empty
             quantity: Number(quantity),
             unit: unit,
             mrp: Number(mrp),
             retail_price: Number(retailPrice),
             total: Number(retailPrice) * Number(quantity)
         });
+
         showAlert('பொருள் சேர்க்கப்பட்டது');
     }
 
@@ -451,7 +472,10 @@ function updateItemsTable() {
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td>${item.name}</td>
+            <td>
+            <div style="font-weight:700;">${escapeHtml(item.tamil_name || item.name)}</div>
+            <div style="font-size:11px; color:#6b7280;">${item.tamil_name ? escapeHtml(item.name) : ''}</div>
+            </td>
             <td>${qty} ${item.unit}</td>
             <td>₹${retail.toFixed(2)}</td>
             <td>₹${total.toFixed(2)}</td>
@@ -491,7 +515,7 @@ function updateItemsTable() {
     document.getElementById('quantity').value = '';
     document.getElementById('mrp').value = '';
     document.getElementById('retailPrice').value = '';
-    document.getElementById('barcodeInput').focus();
+    document.getElementById('productName').focus();
     editingIndex = -1;
     document.getElementById('addBtn').textContent = 'பொருள் சேர்க்க';
     Array.from(document.querySelectorAll('#itemsTableBody tr')).forEach(tr => tr.classList.remove('editing-row'));
@@ -514,6 +538,7 @@ function updateItemsTable() {
             // map items to expected server shape (name, quantity, unit, mrp, retail_price)
             const itemsForServer = items.map(it => ({
                 name: it.name,
+                tamil_name: it.tamil_name || '',
                 quantity: it.quantity,
                 unit: it.unit,
                 mrp: it.mrp,
@@ -673,8 +698,25 @@ function updateItemsTable() {
 
         // navigation shortcuts
         document.getElementById('quantity').addEventListener('keypress', e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('mrp').focus(); }});
-        document.getElementById('mrp').addEventListener('keypress', e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('retailPrice').focus(); }});
-        document.getElementById('retailPrice').addEventListener('keypress', e => { if (e.key === 'Enter') { e.preventDefault(); addItem(); }});
+        document.getElementById('mrp').addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('retailPrice').focus();
+        }
+        });
+
+        document.getElementById('retailPrice').addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            // move cursor to product name instead of adding item or focusing barcode
+            document.getElementById('productName').focus();
+            // optionally select the text so user can quickly overwrite
+            document.getElementById('productName').select();
+        }
+        });
+
+
+
         document.getElementById('cashReceived').addEventListener('input', calculateCashBalance);
 
         // Update preview balance
@@ -723,8 +765,23 @@ function updateItemsTable() {
   prodInput.addEventListener('input', function () {
     const v = this.value.trim().toLowerCase();
     if (!v) { renderSuggestions([]); return; }
-    currentMatches = productList.filter(p => p && p.toLowerCase().includes(v)).slice(0, 8);
-    renderSuggestions(currentMatches);
+    // filter products: match either english or tamil
+    currentMatches = productList
+        .filter(p => {
+            if (!p) return false;
+            const en = (p.name || '').toLowerCase();
+            const ta = (p.tamil_name || '').toLowerCase();
+            return en.includes(v) || ta.includes(v);
+        })
+        .slice(0, 12);
+
+    // transform to display string — show Tamil if exists, else English
+    const displayMatches = currentMatches.map(p => p.tamil_name && p.tamil_name.trim() ? `${p.tamil_name} — ${p.name}` : p.name);
+    renderSuggestions(displayMatches);
+
+    // keep currentMatches array as product objects for selection
+
+
     suggIndex = -1;
   });
 
@@ -759,13 +816,14 @@ function updateItemsTable() {
     if (suggIndex >= 0 && itemsS[suggIndex]) itemsS[suggIndex].classList.add('suggestion-active');
   }
 
-  function selectSuggestion(idx) {
-    const name = currentMatches[idx];
-    if (!name) return;
-    prodInput.value = name;
-    suggBox.style.display = 'none';
-    searchAndAutoAddByName(name);
-  }
+    function selectSuggestion(idx) {
+        const prodObj = currentMatches[idx];
+        if (!prodObj) return;
+        // set visible input to English name to maintain typing/search behavior
+        prodInput.value = prodObj.name || prodObj.tamil_name || '';
+        suggBox.style.display = 'none';
+        searchAndAutoAddByName(prodObj.name || prodObj.tamil_name || '');
+    }
 
   function searchAndAutoAddByName(name) {
     fetch('/get_product_by_name/' + encodeURIComponent(name))
@@ -806,6 +864,56 @@ function updateItemsTable() {
         if (bc) bc.focus();
     });
 
+        // --- open new tab with a fresh bill (no confirmation in new tab) ---
+    function openNewBill() {
+        // Use noopener to avoid linking the two windows; modern browsers block popups sometimes.
+        // We open the same pathname (so it works whether App is at / or /index.html)
+        const url = window.location.pathname + '?fresh=1';
+        const w = window.open(url, '_blank', 'noopener,noreferrer');
+        if (!w) {
+        showAlert('Unable to open new tab — allow popups for this site in your browser.', 'error');
+        } else {
+        // Focus the new window if possible
+        w.focus();
+        }
+    }
+
+    // same logic as resetForm but without confirm and without alerts that confuse UX on initial load
+    function resetFormSilent() {
+        document.getElementById('customerMobile').value = '';
+        document.getElementById('newCustomerName').value = '';
+        document.getElementById('newCustomerAddress').value = '';
+        document.getElementById('oldBalance').value = '';
+        document.getElementById('newDebt').value = '0';
+        document.getElementById('settleDebt').value = '0';
+        document.getElementById('updatedBalance').value = '';
+        document.getElementById('paymentType').value = 'பணம்';
+        document.getElementById('cashReceived').value = '';
+        document.getElementById('cashBalance').value = '';
+        items = [];
+        currentCustomer = null;
+        updateItemsTable();
+        clearProductForm();
+        document.getElementById('billOutput').textContent = 'பில் இங்கே காண்பிக்கப்படும்...';
+        document.getElementById('printBtn').style.display = 'none';
+        document.getElementById('customerMobile').focus();
+    }
+
+    // On page load, detect ?fresh=1 and reset silently so new tab is ready for the next customer
+    document.addEventListener('DOMContentLoaded', function() {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('fresh')) {
+            // force fresh state without user confirmation
+            resetFormSilent();
+        }
+        // existing init calls you already have
+        loadProductList();
+        loadTodayTotals();
+        const bc = document.getElementById('barcodeInput');
+        if (bc) bc.focus();
+    }
+    );
+    
     </script>
 </body>
 </html>
