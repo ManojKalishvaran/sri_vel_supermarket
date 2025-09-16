@@ -21,6 +21,11 @@
       <form id="add-form" action="/add_temp" method="post" class="grid grid-cols-1 md:grid-cols-3 gap-5">
         <input id="name" type="text" name="name" placeholder="Product Name" required
                class="border rounded-xl p-3 focus:ring-2 focus:ring-blue-500 shadow-sm">
+        <!-- Add inside the #add-form (temporary add) somewhere among inputs -->
+        <div class="flex items-center gap-2 md:col-span-3">
+          <input id="use_g2p_temp" name="use_g2p" type="checkbox" class="h-4 w-4" />
+          <label for="use_g2p_temp" class="text-sm">Use Same Name</label>
+        </div>
 
         <select id="measure" name="measure" required
                 class="border rounded-xl p-3 focus:ring-2 focus:ring-blue-500 shadow-sm">
@@ -242,6 +247,11 @@
       <label class="text-sm font-medium">Scan/Enter Barcode</label>
       <input id="barcode_input" type="text" name="barcode" placeholder="Scan barcode with scanner or type it" required
              class="border rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 shadow-sm">
+      <!-- Add inside the #barcode-add-form (barcode modal) near Product Name -->
+      <div class="flex items-center justify-start gap-2">
+        <input id="use_g2p_barcode" name="use_g2p" type="checkbox" class="h-4 w-4" />
+        <label for="use_g2p_barcode" class="text-sm">Use Same Name</label>
+      </div>
 
       <label class="text-sm font-medium">Product Name (English)</label>
       <input id="barcode_name" type="text" name="name" placeholder="Product Name" required

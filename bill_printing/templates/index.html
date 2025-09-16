@@ -588,17 +588,36 @@ function updateItemsTable() {
             const billContent = document.getElementById('billOutput').textContent;
             if (!billContent || billContent.includes('இங்கே')) { showAlert('முதலில் பில் உருவாக்கவும்', 'error'); return; }
 
+            // light HTML transformation for preview: bold supermarket name lines
+            const lines = billContent.split('\n');
+            // Bold the first occurrence of the supermarket name if present
+            for (let i=0;i<lines.length;i++){
+                if (lines[i].trim().toUpperCase().includes('SRI VELAVAN SUPERMARKET')) {
+                    lines[i] = '<strong>' + escapeHtml(lines[i]) + '</strong>';
+                    // also bold the next 0-1 address lines to visually match expected layout
+                    if (i+1 < lines.length) { lines[i+1] = '<div style="font-weight:600;">' + escapeHtml(lines[i+1]) + '</div>'; }
+                    break;
+                }
+            }
+
+            // convert remaining lines to escaped HTML inside <pre> but allow our injected <strong>/<div>
+            // build HTML where our wrapped lines are not double-escaped
+            const htmlLines = lines.map(l => {
+                if (l.startsWith('<strong>') || l.startsWith('<div')) return l;
+                return escapeHtml(l);
+            }).join('\n');
+
             const printWindow = window.open('', '_blank');
-            // use <pre> for predictable spacing and monospace
             printWindow.document.write(`
                 <html><head><title>பில் பிரிண்ட்</title>
                 <style>
-                    @page { size: 58mm auto; margin: 3mm; }
-                    body { font-family: 'Courier New', monospace; font-size: 10px; line-height:1.15; white-space: pre; margin:0; padding:2mm; width:58mm; }
+                    @page { size: 75mm auto; margin: 3mm; }
+                    body { font-family: 'Courier New', monospace; font-size: 10px; line-height:1.15; white-space: pre; margin:0; padding:2mm; width:75mm; }
                     pre { margin:0; }
+                    strong { display:block; font-weight:700; font-size:12px; text-align:left; }
                     @media print { body { margin:0; padding:0; } }
                 </style>
-                </head><body><pre>${escapeHtml(billContent)}</pre></body></html>
+                </head><body><pre>${htmlLines}</pre></body></html>
             `);
             printWindow.document.close();
             printWindow.focus();
