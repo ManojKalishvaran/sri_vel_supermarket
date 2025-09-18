@@ -626,6 +626,295 @@ def create_bill():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ---- Insert the following into app.py (after existing routes like /today_totals) ----
+
+from flask import render_template_string  # add if not already imported at top
+
+@app.route('/transactions')
+def transactions():
+    """
+    Query params:
+      period = 'today' or 'this_month'
+    Returns JSON list of bills with required fields.
+    """
+    period = request.args.get('period', 'today')
+    try:
+        conn = sqlite3.connect(BILLS_DB)
+        cursor = conn.cursor()
+        if period == 'this_month':
+            # bills.date format is 'dd/mm/YYYY' — extract mm/YYYY
+            month_year = datetime.now().strftime('%m/%Y')
+            cursor.execute('''
+                SELECT bill_number, customer_mobile, date, time, total_items, subtotal, cash_balance, payment_type
+                FROM bills
+                WHERE substr(date,4,7) = ?
+                ORDER BY date DESC, time DESC
+            ''', (month_year,))
+        else:
+            # default -> today
+            today = datetime.now().strftime('%d/%m/%Y')
+            cursor.execute('''
+                SELECT bill_number, customer_mobile, date, time, total_items, subtotal, cash_balance, payment_type
+                FROM bills
+                WHERE date = ?
+                ORDER BY time DESC
+            ''', (today,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        results = []
+        for r in rows:
+            bill_number, customer_mobile, date, time, total_items, subtotal, cash_balance, payment_type = r
+            # customer id: using bill_number as unique id; customer phone is customer_mobile
+            results.append({
+                'bill_number': bill_number,
+                'customer_id': bill_number,
+                'customer_phone': customer_mobile if customer_mobile and customer_mobile != 'N/A' else '-',
+                'date': date,
+                'time': time,
+                'total_products_sold': int(total_items or 0),
+                'total_amount_received': float(subtotal or 0.0),
+                'balance_given': float(cash_balance or 0.0),
+                'payment_mode': payment_type
+            })
+
+        return jsonify({'period': period, 'count': len(results), 'transactions': results})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# @app.route('/get_bill/<bill_number>')
+# def get_bill_json(bill_number):
+#     """
+#     Return bill metadata + items for a bill_number (JSON).
+#     """
+#     try:
+#         conn = sqlite3.connect(BILLS_DB)
+#         cursor = conn.cursor()
+#         cursor.execute('SELECT bill_number, customer_mobile, date, time, total_items, total_unique_products, subtotal, total_savings, payment_type, cash_received, cash_balance, old_balance, new_balance, points_earned FROM bills WHERE bill_number = ?', (bill_number,))
+#         b = cursor.fetchone()
+#         if not b:
+#             conn.close()
+#             return jsonify({'error': 'Bill not found'}), 404
+
+#         bill = {
+#             'bill_number': b[0],
+#             'customer_mobile': b[1],
+#             'date': b[2],
+#             'time': b[3],
+#             'total_items': int(b[4] or 0),
+#             'total_unique_products': int(b[5] or 0),
+#             'subtotal': float(b[6] or 0.0),
+#             'total_savings': float(b[7] or 0.0),
+#             'payment_type': b[8],
+#             'cash_received': float(b[9] or 0.0),
+#             'cash_balance': float(b[10] or 0.0),
+#             'old_balance': float(b[11] or 0.0),
+#             'new_balance': float(b[12] or 0.0),
+#             'points_earned': int(b[13] or 0)
+#         }
+
+#         cursor.execute('SELECT product_name, quantity, unit, mrp, retail_price, total_price FROM bill_items WHERE bill_number = ?', (bill_number,))
+#         items_rows = cursor.fetchall()
+#         conn.close()
+
+#         items = []
+#         for it in items_rows:
+#             items.append({
+#                 'product_name': it[0],
+#                 'quantity': it[1],
+#                 'unit': it[2],
+#                 'mrp': float(it[3]),
+#                 'retail_price': float(it[4]),
+#                 'total_price': float(it[5])
+#             })
+
+#         return jsonify({'bill': bill, 'items': items})
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 500
+
+
+# @app.route('/view_bill/<bill_number>')
+# def view_bill(bill_number):
+#     """
+#     Small HTML view to open in a new tab showing the bill and list of products.
+#     This is intentionally minimal and self-contained to avoid creating extra templates.
+#     """
+#     try:
+#         res = get_bill_json.__wrapped__(bill_number)  # call underlying function quickly
+#         # If previous call returned a Flask response (tuple), handle
+#         if isinstance(res, tuple):
+#             # means an error (response, status)
+#             return res
+#         data = res.get_json() if hasattr(res, 'get_json') else res
+#         if data.get('error'):
+#             return f"<h3>Bill not found: {bill_number}</h3>", 404
+
+#         bill = data['bill']
+#         items = data['items']
+
+#         html = f"""
+#         <html><head><title>Bill {bill_number}</title>
+#         <style>
+#           body {{ font-family: Arial, sans-serif; padding:16px; max-width:800px; }}
+#           table {{ width:100%; border-collapse:collapse; margin-top:12px; }}
+#           th,td {{ padding:8px; border:1px solid #ddd; text-align:left; }}
+#           th {{ background:#f6f6f6; }}
+#         </style>
+#         </head><body>
+#           <h2>Bill: {bill_number}</h2>
+#           <div><strong>Date:</strong> {bill['date']} <strong>Time:</strong> {bill['time']}</div>
+#           <div><strong>Customer phone:</strong> {bill['customer_mobile'] if bill['customer_mobile'] and bill['customer_mobile']!='N/A' else '-'}</div>
+#           <div><strong>Payment:</strong> {bill['payment_type']}</div>
+#           <div style="margin-top:12px;"><strong>Totals:</strong> Items: {bill['total_items']}, Unique: {bill['total_unique_products']}, Subtotal: ₹{bill['subtotal']:.2f}, Balance given: ₹{bill['cash_balance']:.2f}</div>
+#           <h3 style="margin-top:18px">Products</h3>
+#           <table>
+#             <thead><tr><th>#</th><th>Product</th><th>Qty</th><th>Unit</th><th>Rate</th><th>Total</th></tr></thead>
+#             <tbody>
+#         """
+#         for idx,it in enumerate(items, start=1):
+#             html += f"<tr><td>{idx}</td><td>{it['product_name']}</td><td>{it['quantity']}</td><td>{it['unit']}</td><td>₹{it['retail_price']:.2f}</td><td>₹{it['total_price']:.2f}</td></tr>"
+#         html += "</tbody></table></body></html>"
+#         return html
+#     except Exception as e:
+#         return f"<h3>Error: {e}</h3>", 500
+
+
+def fetch_bill_data(bill_number):
+    conn = sqlite3.connect(BILLS_DB)
+    cursor = conn.cursor()
+    cursor.execute('SELECT bill_number, customer_mobile, date, time, total_items, total_unique_products, subtotal, total_savings, payment_type, cash_received, cash_balance, old_balance, new_balance, points_earned FROM bills WHERE bill_number = ?', (bill_number,))
+    b = cursor.fetchone()
+    if not b:
+        conn.close()
+        return None, None
+    bill = {
+        'bill_number': b[0],
+        'customer_mobile': b[1],
+        'date': b[2],
+        'time': b[3],
+        'total_items': int(b[4] or 0),
+        'total_unique_products': int(b[5] or 0),
+        'subtotal': float(b[6] or 0.0),
+        'total_savings': float(b[7] or 0.0),
+        'payment_type': b[8],
+        'cash_received': float(b[9] or 0.0),
+        'cash_balance': float(b[10] or 0.0),
+        'old_balance': float(b[11] or 0.0),
+        'new_balance': float(b[12] or 0.0),
+        'points_earned': int(b[13] or 0)
+    }
+    cursor.execute('SELECT product_name, quantity, unit, mrp, retail_price, total_price FROM bill_items WHERE bill_number = ?', (bill_number,))
+    items_rows = cursor.fetchall()
+    conn.close()
+    items = [{
+        'product_name': it[0],
+        'quantity': it[1],
+        'unit': it[2],
+        'mrp': float(it[3]),
+        'retail_price': float(it[4]),
+        'total_price': float(it[5])
+    } for it in items_rows]
+    return bill, items
+
+@app.route('/get_bill/<bill_number>')
+def get_bill_json(bill_number):
+    bill, items = fetch_bill_data(bill_number)
+    if not bill:
+        return jsonify({'error': 'Bill not found'}), 404
+    return jsonify({'bill': bill, 'items': items})
+
+
+@app.route('/view_bill/<bill_number>')
+def view_bill(bill_number):
+    """
+    HTML view to open in a new tab showing the bill and list of products.
+    Always returns a valid Flask response (string or tuple with status).
+    """
+    try:
+        bill, items = fetch_bill_data(bill_number)
+        if not bill:
+            return f"<h3>Bill not found: {bill_number}</h3>", 404
+
+        # Build simple but clean HTML for viewing in new tab
+        html = f"""
+        <!doctype html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>Bill {bill_number}</title>
+          <style>
+            body {{ font-family: Arial, sans-serif; padding:18px; color:#222; }}
+            .container {{ max-width:900px; margin:0 auto; }}
+            h2 {{ margin:0 0 8px 0; }}
+            .meta {{ margin-bottom:12px; color:#333; }}
+            table {{ width:100%; border-collapse:collapse; margin-top:8px; }}
+            th,td {{ padding:8px; border:1px solid #e6e6e6; text-align:left; font-size:14px; }}
+            th {{ background: linear-gradient(90deg,#2c3e50,#3498db); color:white; }}
+            .totals {{ margin-top:12px; padding:10px; background:#fafafa; border:1px solid #eee; }}
+            .small {{ font-size:13px; color:#555; }}
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h2>Bill: {bill_number}</h2>
+            <div class="meta small">
+              <strong>Date:</strong> {bill['date']} &nbsp;&nbsp;
+              <strong>Time:</strong> {bill['time']} &nbsp;&nbsp;
+              <strong>Customer:</strong> {(bill['customer_mobile'] if bill['customer_mobile'] and bill['customer_mobile'] != 'N/A' else '-')}
+            </div>
+
+            <div class="totals">
+              <div><strong>Items:</strong> {bill['total_items']} &nbsp;&nbsp; <strong>Unique:</strong> {bill['total_unique_products']}</div>
+              <div><strong>Subtotal:</strong> ₹{bill['subtotal']:.2f} &nbsp;&nbsp; <strong>Balance given:</strong> ₹{bill['cash_balance']:.2f}</div>
+              <div><strong>Payment:</strong> {bill['payment_type']}</div>
+            </div>
+
+            <h3 style="margin-top:16px;">Products</h3>
+            <table>
+              <thead>
+                <tr><th>#</th><th>Product</th><th>Qty</th><th>Unit</th><th>Rate</th><th>Total</th></tr>
+              </thead>
+              <tbody>
+        """
+
+        for idx, it in enumerate(items, start=1):
+            pname = (it.get('product_name') or '')
+            qty = it.get('quantity') or 0
+            unit = it.get('unit') or ''
+            rate = float(it.get('retail_price') or 0.0)
+            total = float(it.get('total_price') or 0.0)
+            html += f"<tr><td>{idx}</td><td>{pname}</td><td>{qty}</td><td>{unit}</td><td>₹{rate:.2f}</td><td>₹{total:.2f}</td></tr>"
+
+        html += """
+              </tbody>
+            </table>
+
+            <div class="totals" style="margin-top:16px;">
+        """
+        html += f"<div><strong>Subtotal:</strong> ₹{bill['subtotal']:.2f}</div>"
+        html += f"<div><strong>Total savings:</strong> ₹{bill.get('total_savings', 0.0):.2f}</div>"
+        if bill.get('customer_mobile') and bill['customer_mobile'] != 'N/A':
+            html += f"<div><strong>Old balance:</strong> ₹{bill.get('old_balance',0.0):.2f} &nbsp;&nbsp; <strong>New balance:</strong> ₹{bill.get('new_balance',0.0):.2f}</div>"
+        html += f"<div><strong>Cash received:</strong> ₹{bill.get('cash_received',0.0):.2f} &nbsp;&nbsp; <strong>Change:</strong> ₹{bill.get('cash_balance',0.0):.2f}</div>"
+        html += "</div>"
+
+        html += """
+            <div style="margin-top:18px; font-size:13px; color:#666;">Generated by POS</div>
+          </div>
+        </body>
+        </html>
+        """
+
+        return html
+
+    except Exception as e:
+        # Return an explicit error HTML rather than letting Flask return None
+        return f"<h3>Error rendering bill: {e}</h3>", 500
+
+
+
 if __name__ == '__main__':
     init_databases()
     app.run(debug=True, port=5002)

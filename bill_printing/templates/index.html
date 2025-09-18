@@ -74,6 +74,11 @@
         <button id="newBillBtn" class="btn" title="புதிய பில் - புதிய வாடிக்கையாளர் (open in new tab)" onclick="openNewBill()">
             புதிய பில்
         </button>
+        <!-- Add next to existing New Bill button in header -->
+        <button id="transactionsBtn" class="btn" title="Transactions" onclick="openTransactionsPanel()">
+            பரிவர்த்தனைகள்
+        </button>
+
         <div>
             <h1>SHRI VELAVAN SUPER MARKET</h1>
             <div style="font-size:12px; opacity:0.9;">Billing System</div>
@@ -249,6 +254,80 @@
             <div>பதிவு செய்கிறோம்...</div>
         </div>
     </div>
+<!-- Transactions panel (hidden)
+<div id="transactionsPanel" style="display:none; position:fixed; right:20px; top:80px; width:760px; max-width:95%; background:white; border-radius:8px; box-shadow:0 12px 40px rgba(0,0,0,0.2); z-index:3000; padding:12px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+        <h3 style="margin:0;">Transactions</h3>
+        <div>
+            <select id="txnPeriod">
+                <option value="today">Today</option>
+                <option value="this_month">This month</option>
+            </select>
+            <button class="btn" onclick="fetchTransactions()">Fetch</button>
+            <button class="btn btn-danger" onclick="closeTransactionsPanel()">Close</button>
+        </div>
+    </div>
+    <div style="margin-top:8px; max-height:520px; overflow:auto;">
+        <table id="transactionsTable" style="width:100%; border-collapse:collapse; margin-top:8px;">
+            <thead>
+                <tr style="background:#f1f5f9;">
+                    <th style="padding:8px; border:1px solid #e2e8f0;">Date</th>
+                    <th style="padding:8px; border:1px solid #e2e8f0;">Time</th>
+                    <th style="padding:8px; border:1px solid #e2e8f0;">Bill#</th>
+                    <th style="padding:8px; border:1px solid #e2e8f0;">Customer Phone</th>
+                    <th style="padding:8px; border:1px solid #e2e8f0;">Products</th>
+                    <th style="padding:8px; border:1px solid #e2e8f0;">Amount</th>
+                    <th style="padding:8px; border:1px solid #e2e8f0;">Balance given</th>
+                    <th style="padding:8px; border:1px solid #e2e8f0;">Payment</th>
+                    <th style="padding:8px; border:1px solid #e2e8f0;">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="transactionsBody"></tbody>
+        </table>
+    </div>
+</div> -->
+<!-- Transactions Modal -->
+<div id="transactionsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:4000; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:10px; max-width:90%; width:900px; max-height:90%; overflow:auto; padding:20px; box-shadow:0 10px 40px rgba(0,0,0,0.3);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <h2 style="margin:0;">Transactions</h2>
+      <button class="btn btn-danger" onclick="closeTransactionsModal()">Close</button>
+    </div>
+    <div class="form-group" style="margin-bottom:12px;" >
+      <select id="txnPeriod">
+        <option value="today">Today</option>
+        <option value="this_month">This month</option>
+      </select>
+      <button class="btn" onclick="fetchTransactions()">Fetch</button>
+    </div>
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th>Date</th><th>Time</th><th>Bill#</th><th>Phone</th><th>Products</th><th>Amount</th><th>Balance</th><th>Payment</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="transactionsBody"></tbody>
+    </table>
+  </div>
+</div>
+<!-- Bill Details Modal (hidden by default) -->
+<div id="billModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:4500; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:10px; max-width:920px; width:95%; max-height:88vh; overflow:auto; padding:18px; box-shadow:0 10px 40px rgba(0,0,0,0.35);">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px;">
+      <h2 style="margin:0;">Bill details</h2>
+      <div>
+        <!-- <button class="btn" onclick="printBillView()" style="margin-right:8px;">Print</button> -->
+        <button class="btn btn-danger" onclick="closeBillModal()">Close</button>
+      </div>
+    </div>
+
+    <div id="billModalContent" style="font-family:Arial, sans-serif; color:#222;">
+      <!-- filled by JS -->
+      <div style="text-align:center; padding:18px 0; color:#666;">Loading...</div>
+    </div>
+  </div>
+</div>
+
 
     <script>
         let items = [];
@@ -368,6 +447,133 @@
             else if (measureUnit.includes('l')) unitSelect.value = 'l';
             else unitSelect.value = 'count';
         }
+// Transactions panel controls
+function openTransactionsPanel() {
+    document.getElementById('transactionsPanel').style.display = 'block';
+    // default to today and auto-fetch
+    document.getElementById('txnPeriod').value = 'today';
+    fetchTransactions();
+}
+function closeTransactionsPanel() {
+    document.getElementById('transactionsPanel').style.display = 'none';
+}
+
+function fetchTransactions() {
+    const period = document.getElementById('txnPeriod').value;
+    const q = period === 'this_month' ? 'this_month' : 'today';
+    fetch('/transactions?period=' + encodeURIComponent(q))
+        .then(r => r.json())
+        .then(data => {
+            const body = document.getElementById('transactionsBody');
+            body.innerHTML = '';
+            if (data.error) {
+                body.innerHTML = `<tr><td colspan="9" style="padding:8px;color:red;">Error: ${data.error}</td></tr>`;
+                return;
+            }
+            const txns = data.transactions || [];
+            if (txns.length === 0) {
+                body.innerHTML = `<tr><td colspan="9" style="padding:8px;">No transactions</td></tr>`;
+                return;
+            }
+            txns.forEach(t => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="padding:8px; border:1px solid #e2e8f0;">${escapeHtml(t.date)}</td>
+                    <td style="padding:8px; border:1px solid #e2e8f0;">${escapeHtml(t.time)}</td>
+                    <td style="padding:8px; border:1px solid #e2e8f0;">${escapeHtml(t.bill_number)}</td>
+                    <td style="padding:8px; border:1px solid #e2e8f0;">${escapeHtml(t.customer_phone)}</td>
+                    <td style="padding:8px; border:1px solid #e2e8f0; text-align:right;">${t.total_products_sold}</td>
+                    <td style="padding:8px; border:1px solid #e2e8f0; text-align:right;">₹${Number(t.total_amount_received).toFixed(2)}</td>
+                    <td style="padding:8px; border:1px solid #e2e8f0; text-align:right;">₹${Number(t.balance_given).toFixed(2)}</td>
+                    <td style="padding:8px; border:1px solid #e2e8f0;">${escapeHtml(t.payment_mode)}</td>
+                    <td style="padding:8px; border:1px solid #e2e8f0;">
+                        <button class="btn" onclick="openBillDetails('${encodeURIComponent(t.bill_number)}')">All products</button>
+                    </td>
+                `;
+                body.appendChild(tr);
+            });
+        })
+        .catch(err => {
+            const body = document.getElementById('transactionsBody');
+            body.innerHTML = `<tr><td colspan="9" style="padding:8px;color:red;">Fetch error: ${err.message}</td></tr>`;
+        });
+}
+
+// Open bill details in in-page modal (fetch JSON and render)
+function openBillDetails(bill_number_enc) {
+    const billnum = decodeURIComponent(bill_number_enc);
+    const content = document.getElementById('billModalContent');
+    content.innerHTML = '<div style="text-align:center; padding:18px 0; color:#666;">Loading...</div>';
+    document.getElementById('billModal').style.display = 'flex';
+
+    fetch('/get_bill/' + encodeURIComponent(billnum))
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+            content.innerHTML = `<div style="color:red; padding:12px;">Error: ${escapeHtml(data.error)}</div>`;
+            return;
+        }
+        const bill = data.bill;
+        const items = data.items || [];
+
+        // build HTML
+        let html = '';
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
+                    <div><strong>Bill:</strong> ${escapeHtml(bill.bill_number)}<br><span class="small">Date: ${escapeHtml(bill.date)} ${escapeHtml(bill.time)}</span></div>
+                    <div style="text-align:right;"><strong>Customer:</strong> ${escapeHtml((bill.customer_mobile && bill.customer_mobile !== 'N/A') ? bill.customer_mobile : '-')}</div>
+                 </div>`;
+
+        html += `<div style="background:#fafafa; padding:10px; border:1px solid #eee; border-radius:6px; margin-bottom:12px;">
+                   <div><strong>Items:</strong> ${bill.total_items} &nbsp;&nbsp; <strong>Unique:</strong> ${bill.total_unique_products}</div>
+                   <div><strong>Subtotal:</strong> ₹${Number(bill.subtotal).toFixed(2)} &nbsp;&nbsp; <strong>Change:</strong> ₹${Number(bill.cash_balance).toFixed(2)}</div>
+                   <div><strong>Payment:</strong> ${escapeHtml(bill.payment_type)}</div>
+                 </div>`;
+
+        html += `<table style="width:100%; border-collapse:collapse;">
+                  <thead>
+                    <tr style="background:linear-gradient(90deg,#2c3e50,#3498db); color:white;">
+                      <th style="padding:8px; text-align:left;">#</th>
+                      <th style="padding:8px; text-align:left;">Product</th>
+                      <th style="padding:8px; text-align:right; width:90px;">Qty</th>
+                      <th style="padding:8px; text-align:left; width:90px;">Unit</th>
+                      <th style="padding:8px; text-align:right; width:110px;">Rate</th>
+                      <th style="padding:8px; text-align:right; width:110px;">Total</th>
+                    </tr>
+                  </thead><tbody>`;
+
+        items.forEach((it, i) => {
+            const pname = it.product_name || '';
+            const qty = it.quantity == null ? '' : it.quantity;
+            const unit = it.unit || '';
+            const rate = Number(it.retail_price || 0).toFixed(2);
+            const tot = Number(it.total_price || 0).toFixed(2);
+            html += `<tr>
+                        <td style="padding:8px; border-bottom:1px solid #eee;">${i+1}</td>
+                        <td style="padding:8px; border-bottom:1px solid #eee;">${escapeHtml(pname)}</td>
+                        <td style="padding:8px; border-bottom:1px solid #eee; text-align:right;">${escapeHtml(String(qty))}</td>
+                        <td style="padding:8px; border-bottom:1px solid #eee;">${escapeHtml(unit)}</td>
+                        <td style="padding:8px; border-bottom:1px solid #eee; text-align:right;">₹${rate}</td>
+                        <td style="padding:8px; border-bottom:1px solid #eee; text-align:right;">₹${tot}</td>
+                     </tr>`;
+        });
+
+        html += `</tbody></table>`;
+
+        // footer totals
+        html += `<div style="background:#fff; padding:12px; border:1px solid #eee; border-radius:6px; margin-top:12px;">
+                  <div><strong>Subtotal:</strong> ₹${Number(bill.subtotal).toFixed(2)}</div>
+                  <div><strong>Total savings:</strong> ₹${Number(bill.total_savings || 0).toFixed(2)}</div>
+                  <div><strong>Cash received:</strong> ₹${Number(bill.cash_received || 0).toFixed(2)} &nbsp;&nbsp; <strong>Change:</strong> ₹${Number(bill.cash_balance || 0).toFixed(2)}</div>
+                 </div>`;
+
+        content.innerHTML = html;
+        // store last bill html for printing
+        content.dataset.lastPrintHtml = html;
+      })
+      .catch(err => {
+         document.getElementById('billModalContent').innerHTML = `<div style="color:red; padding:12px;">Fetch failed: ${escapeHtml(err.message)}</div>`;
+      });
+}
 
 
 function addItem() {
@@ -932,6 +1138,33 @@ function updateItemsTable() {
         if (bc) bc.focus();
     }
     );
+    function openTransactionsPanel() {
+    document.getElementById('transactionsModal').style.display = 'flex';
+    document.getElementById('txnPeriod').value = 'today';
+    fetchTransactions();
+}
+function closeTransactionsModal() {
+    document.getElementById('transactionsModal').style.display = 'none';
+}
+function closeBillModal() {
+    document.getElementById('billModal').style.display = 'none';
+    document.getElementById('billModalContent').innerHTML = '';
+}
+
+function printBillView() {
+    // print content currently shown in the modal
+    const content = document.getElementById('billModalContent').dataset.lastPrintHtml || document.getElementById('billModalContent').innerHTML;
+    if (!content) return alert('No bill loaded');
+    const w = window.open('', '_blank');
+    w.document.write(`<html><head><title>Print bill</title>
+        <style>body{font-family:Arial, sans-serif; padding:12px;} table{width:100%; border-collapse:collapse;} th,td{padding:6px; border:1px solid #ddd;}</style>
+        </head><body>${content}</body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+    setTimeout(()=> w.close(), 500);
+}
+
     
     </script>
 </body>
