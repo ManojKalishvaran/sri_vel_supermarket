@@ -202,44 +202,184 @@ def wrap_text_to_max_lines(s, char_width, max_lines=2):
     result[-1] = ellipsize_line_by_chars(result[-1], char_width)
     return result
 
-def format_thermal_bill(items, width=38):
-    # Adjusted widths for better alignment on 7.5cm thermal paper
-    name_w = 16
-    qty_w = 4
-    mrp_w = 7
-    rate_w = 7
-    tot_w = 6
+# def format_thermal_bill(items, width=38):
+#     # Adjusted widths for better alignment on 7.5cm thermal paper
+#     name_w = 16
+#     qty_w = 4
+#     mrp_w = 7
+#     rate_w = 7
+#     tot_w = 6
     
-    # Create properly spaced header
-    header = f"{'பொருள்':<{name_w}}{'அளவு':>{qty_w}}{'MRP':>{mrp_w}}{'விலை':>{rate_w}}{'தொகை':>{tot_w}}"
-    line_sep = '=' * width
-    lines = [line_sep, header, line_sep]
+#     # Create properly spaced header
+#     header = f"{'பொருள்':<{name_w}}{'அளவு':>{qty_w}}{'MRP':>{mrp_w}}{'விலை':>{rate_w}}{'தொகை':>{tot_w}}"
+#     line_sep = '=' * width
+#     lines = [line_sep, header, line_sep]
     
-    for item in items:
-        qty = str(int(item.get('quantity', 0))) if float(item.get('quantity', 0)).is_integer() else str(item.get('quantity'))
-        mrp_val = f"{float(item.get('mrp',0)):.2f}"
-        rate_val = f"{float(item.get('retail_price',0)):.2f}"
-        total_val = f"{float(item.get('total_price',0)):.2f}"
+#     for item in items:
+#         qty = str(int(item.get('quantity', 0))) if float(item.get('quantity', 0)).is_integer() else str(item.get('quantity'))
+#         mrp_val = f"{float(item.get('mrp',0)):.2f}"
+#         rate_val = f"{float(item.get('retail_price',0)):.2f}"
+#         total_val = f"{float(item.get('total_price',0)):.2f}"
         
-        name_lines = wrap_text_to_max_lines(str(item.get('product_name','')), name_w, max_lines=2)
+#         name_lines = wrap_text_to_max_lines(str(item.get('product_name','')), name_w, max_lines=2)
         
-        # First line with all details
-        left_part = name_lines[0].ljust(name_w)
-        qty_part = qty.rjust(qty_w)
-        mrp_part = mrp_val.rjust(mrp_w)
-        rate_part = rate_val.rjust(rate_w)
-        total_part = total_val.rjust(tot_w)
+#         # First line with all details
+#         left_part = name_lines[0].ljust(name_w)
+#         qty_part = qty.rjust(qty_w)
+#         mrp_part = mrp_val.rjust(mrp_w)
+#         rate_part = rate_val.rjust(rate_w)
+#         total_part = total_val.rjust(tot_w)
         
-        first_line = left_part + qty_part + mrp_part + rate_part + total_part
-        lines.append(first_line)
+#         first_line = left_part + qty_part + mrp_part + rate_part + total_part
+#         lines.append(first_line)
         
-        # Additional name lines if product name is long
-        for cont in name_lines[1:]:
-            lines.append(cont.ljust(name_w))
+#         # Additional name lines if product name is long
+#         for cont in name_lines[1:]:
+#             lines.append(cont.ljust(name_w))
             
-        lines.append('-' * width)
+#         lines.append('-' * width)
     
-    return '\n'.join(lines)
+#     return '\n'.join(lines)
+
+def format_thermal_bill(items, width=38, hDC=None):
+    """
+    Render items into a column-aligned bill.
+    - If hDC is provided, columns are allocated in PIXELS and aligned using GetTextExtent (accurate for Tamil).
+    - Otherwise, fallback to approximate MONOSPACE character columns (for text preview).
+    Args:
+      items: list of dicts with keys: product_name, quantity, mrp, retail_price, total_price
+      width: when hDC is None, this is the character width per line (old behavior). When hDC provided, ignored.
+      hDC: optional win32ui device context for pixel measurement.
+    Returns:
+      Multiline string where columns are aligned.
+    """
+    # Column names (Tamil)
+    hdr_name = "பொருள்"
+    hdr_qty = "அளவு"
+    hdr_mrp = "MRP"
+    hdr_rate = "விலை"
+    hdr_tot = "தொகை"
+
+    if hDC:
+        # Pixel-based layout ------------------------------------------------
+        try:
+            # use printable width available from the DC or reasonable defaults
+            printable_px = hDC.GetDeviceCaps(win32con.HORZRES) or 380
+        except Exception:
+            printable_px = 380
+
+        margin = max(8, int(0.03 * printable_px))
+        content_px = max(200, printable_px - margin * 2)
+
+        # column distribution (tuned for narrow thermal paper)
+        pct = {'name': 0.50, 'qty': 0.10, 'mrp': 0.13, 'rate': 0.13, 'total': 0.14}
+        name_px = int(content_px * pct['name'])
+        qty_px = int(content_px * pct['qty'])
+        mrp_px = int(content_px * pct['mrp'])
+        rate_px = int(content_px * pct['rate'])
+        total_px = int(content_px * pct['total'])
+
+        # helpers
+        def pw(s): return hDC.GetTextExtent(str(s))[0]
+        def wrap_px(text, max_px, max_lines=2):
+            return split_text_to_pixel_width(text, max_px, hDC, max_lines=max_lines, ellipsis='...')
+
+        lines = []
+        # header
+        sep = '-' * (max(20, content_px // (hDC.GetTextExtent('0')[0] or 6)))
+        lines.append(sep)
+        # header line: place headings using pixel offsets
+        # we'll build a blank buffer line and then place values by padding spaces as approximate fallback
+        # But for accurate preview use the pixel widths below to compute spacing.
+        # Build header string using measured widths (approximate, with spaces)
+        header = hdr_name.ljust(12)  # visible label left
+        # for headers we don't need perfect pixel alignment in the text-mode (printer uses DC)
+        header += f"{hdr_qty.rjust(6)}{hdr_mrp.rjust(8)}{hdr_rate.rjust(8)}{hdr_tot.rjust(8)}"
+        lines.append(header)
+        lines.append(sep)
+
+        for item in items:
+            qty = str(int(item.get('quantity', 0))) if float(item.get('quantity', 0)).is_integer() else str(item.get('quantity'))
+            mrp_val = f"{float(item.get('mrp',0)):.2f}"
+            rate_val = f"{float(item.get('retail_price',0)):.2f}"
+            total_val = f"{float(item.get('total_price',0)):.2f}"
+
+            name_lines = wrap_px(str(item.get('product_name','')), name_px, max_lines=2)
+
+            # first line: place numbers at the right edges (approximate text output)
+            # compute needed spaces based on pixel widths -> convert to space count using width of '0'
+            zero_w = pw('0') or 6
+            # build a text line using raw pieces and padding in characters
+            left_text = name_lines[0]
+            # measure left_text pixel width, compute remaining pixel room to qty column
+            left_px = pw(left_text)
+            # position numbers by making a padding of spaces whose pixel-size approximates the gap
+            # compute target positions (relative)
+            qty_target_x = name_px
+            mrp_target_x = name_px + qty_px
+            rate_target_x = name_px + qty_px + mrp_px
+            total_target_x = name_px + qty_px + mrp_px + rate_px
+
+            def px_to_spaces(px):
+                return max(1, int(px / zero_w))
+
+            # create padding string to position qty
+            pad1 = px_to_spaces(max(0, qty_target_x - left_px))
+            line = left_text + (' ' * pad1)
+            # append qty right-aligned inside qty box
+            qty_spaces = px_to_spaces(max(0, qty_px - pw(qty)))
+            line += (' ' * max(0, qty_spaces - len(qty))) + qty
+            # mrp
+            mrp_spaces = px_to_spaces(max(1, mrp_px - pw(mrp_val)))
+            line += (' ' * mrp_spaces) + mrp_val
+            # rate
+            rate_spaces = px_to_spaces(max(1, rate_px - pw(rate_val)))
+            line += (' ' * rate_spaces) + rate_val
+            # total
+            tot_spaces = px_to_spaces(max(1, total_px - pw(total_val)))
+            line += (' ' * tot_spaces) + total_val
+
+            lines.append(line)
+
+            # continuation lines for long name
+            for cont in name_lines[1:]:
+                lines.append(cont)
+            lines.append(sep)
+
+        return '\n'.join(lines)
+
+    else:
+        # Character/monospace fallback ---------------------------------------
+        # When hDC not provided (e.g., JSON preview), fallback to character widths.
+        # Make columns sum to `width` characters (width like 38 typical for 7.5cm thermal)
+        # Tuned columns (sum ~= width)
+        name_w = int(width * 0.50)        # product name
+        qty_w = max(4, int(width * 0.10)) # qty
+        mrp_w = max(6, int(width * 0.13)) # mrp
+        rate_w = max(6, int(width * 0.13))# rate
+        tot_w = max(6, width - (name_w + qty_w + mrp_w + rate_w))
+
+        header = f"{hdr_name:<{name_w}}{hdr_qty:>{qty_w}}{hdr_mrp:>{mrp_w}}{hdr_rate:>{rate_w}}{hdr_tot:>{tot_w}}"
+        sep = '=' * width
+        lines = [sep, header, sep]
+
+        for item in items:
+            qty = str(int(item.get('quantity', 0))) if float(item.get('quantity', 0)).is_integer() else str(item.get('quantity'))
+            mrp_val = f"{float(item.get('mrp',0)):.2f}"
+            rate_val = f"{float(item.get('retail_price',0)):.2f}"
+            total_val = f"{float(item.get('total_price',0)):.2f}"
+
+            # wrap name by character width (best-effort)
+            name_lines = wrap_text_to_max_lines(str(item.get('product_name','')), name_w, max_lines=2)
+
+            first_line = name_lines[0].ljust(name_w) + qty.rjust(qty_w) + mrp_val.rjust(mrp_w) + rate_val.rjust(rate_w) + total_val.rjust(tot_w)
+            lines.append(first_line)
+            for cont in name_lines[1:]:
+                lines.append(cont.ljust(name_w))
+            lines.append('-' * width)
+
+        return '\n'.join(lines)
+
 
 def split_text_to_pixel_width(text, max_px, hDC, max_lines=2, ellipsis='...'):
     lines = []

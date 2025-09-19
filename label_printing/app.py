@@ -34,7 +34,7 @@ LABEL_H_MM = 20.0        # 2.0 cm height
 LABELS_PER_ROW = 3       # exactly 3 labels per row
 
 # Margins and spacing (user said 3 mm gap between adjacent labels/rows)
-PAGE_MARGIN_MM = 3.5    # outer page margin (left & right) (change it to 1.5 or 2 if continues to cut off)
+PAGE_MARGIN_MM = 2.9    # outer page margin (left & right) (change it to 1.5 or 2 if continues to cut off)
 LABEL_SPACING_MM = 3.0   # gap between adjacent labels (horizontal & vertical)
 # Small global X offset to correct left/right shift of printed grid.
 # Negative moves labels left, positive moves labels right. Default tuned left (-0.6 mm).
@@ -104,7 +104,7 @@ def _generate_barcode_pil(code_text: str) -> Image.Image:
     # module_height increased slightly to give barcode ample vertical stroke for scanning.
     barcode_obj.write(buf, options={
         "module_width": 0.60,    # increased from 0.33 to 0.40 for sturdier bars
-        "module_height": 16.0,   # a bit taller to help cheap scanners
+        "module_height": 18.0,   # a bit taller to help cheap scanners
         "quiet_zone": 4.0,       # quiet zone (tunable)
         "write_text": False,
         "background": "white",
