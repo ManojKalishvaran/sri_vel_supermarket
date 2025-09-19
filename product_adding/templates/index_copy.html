@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Supermarket Product Entry</title>
+  <link rel="icon" href="images/image.png" type="image/png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Custom animations and transitions */
+    .fade-in {
+      animation: fadeIn 0.3s ease-in;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .hover-scale:hover {
+      transform: scale(1.02);
+      transition: transform 0.2s ease;
+    }
+    
+    /* Modal backdrop blur */
+    .modal-backdrop {
+      backdrop-filter: blur(4px);
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 min-h-screen font-sans">
+  <div class="container mx-auto px-4 py-8 max-w-7xl">
+
+    <!-- Header -->
+    <div class="text-center mb-8">
+      <h1 class="text-4xl md:text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+        🛒 Supermarket Product Entry
+      </h1>
+      <p class="text-gray-600 text-lg">Manage your product inventory with ease</p>
+    </div>
+
+    <!-- Add Product Section -->
+    <div class="grid lg:grid-cols-4 gap-6 mb-8">
+      <!-- Main Form -->
+      <div class="lg:col-span-3 bg-white rounded-2xl shadow-xl p-6 hover-scale">
+        <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+          ➕ <span class="ml-2">Add Product (Temporary)</span>
+        </h2>
+
+        <form id="add-form" action="/add_temp" method="post" class="space-y-6">
+          <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="md:col-span-2 lg:col-span-1">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Product Name</label>
+              <input id="name" type="text" name="name" placeholder="Enter product name" required
+                     class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Measure</label>
+              <select id="measure" name="measure" required
+                      class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <option value="kg">Kilogram (kg)</option>
+                <option value="g">Gram (g)</option>
+                <option value="l">Liter (l)</option>
+                <option value="ml">Milliliter (ml)</option>
+                <option value="count">Count/Pieces</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
+              <input id="quantity" type="number" name="quantity" placeholder="0.00" step="0.01" required
+                     class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">MRP (₹)</label>
+              <input id="mrp" type="number" name="mrp" placeholder="0.00" step="0.01" required
+                     class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Retail Price (₹)</label>
+              <input id="retail_price" type="number" name="retail_price" placeholder="0.00" step="0.01" required
+                     class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <input id="use_g2p_temp" name="use_g2p" type="checkbox" class="h-4 w-4 text-blue-600 rounded focus:ring-blue-500">
+            <label for="use_g2p_temp" class="text-sm font-medium text-gray-700">Tamil Name</label>
+          </div>
+
+          <button id="add-btn" type="submit"
+                  class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105">
+            Add to List
+          </button>
+        </form>
+      </div>
+
+      <!-- Barcode Add Button -->
+      <div class="lg:col-span-1">
+        <div class="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-xl p-6 text-white h-full flex flex-col justify-center hover-scale">
+          <button id="openBarcodePanel"
+                  class="w-full bg-white bg-opacity-20 hover:bg-opacity-30 backdrop-blur-sm text-white font-semibold py-4 px-4 rounded-xl transition-all duration-200 mb-4">
+            📱 Add by Barcode
+          </button>
+          <p class="text-sm text-indigo-100 text-center">
+            Use your scanner to quickly add products by barcode
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Temporary Products List -->
+    <div class="bg-white rounded-2xl shadow-xl p-6 mb-8 hover-scale">
+      <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+        📦 <span class="ml-2">Products to be Saved</span>
+      </h2>
+      
+      <div class="overflow-x-auto">
+        <table class="w-full table-auto">
+          <thead>
+            <tr class="bg-gradient-to-r from-gray-50 to-gray-100">
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">Barcode</th>
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">Tamil Name</th>
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">Timestamp</th>
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">Measure</th>
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">Quantity</th>
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">MRP</th>
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">Retail Price</th>
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="temp-tbody" class="divide-y divide-gray-100">
+            <!-- Sample row for demo -->
+            <tr class="hover:bg-blue-50 transition-colors">
+              <td class="py-3 px-4 text-gray-700">2025091701001</td>
+              <td class="py-3 px-4 font-medium">Sample Product</td>
+              <td class="py-3 px-4 text-gray-600">மாதிரி பொருள்</td>
+              <td class="py-3 px-4 text-gray-600">2025-09-17 01:00:17</td>
+              <td class="py-3 px-4">kg</td>
+              <td class="py-3 px-4">1.0</td>
+              <td class="py-3 px-4 text-gray-600">₹147.00</td>
+              <td class="py-3 px-4 text-green-600 font-semibold">₹140.00</td>
+              <td class="py-3 px-4">
+                <button type="button" class="temp-delete-btn bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg transition-colors">
+                  🗑️
+                </button>
+              </td>
+            </tr>
+            <!-- Empty state -->
+            <tr id="empty-row" class="hidden">
+              <td colspan="9" class="py-12 text-center text-gray-500">
+                <div class="flex flex-col items-center">
+                  <div class="text-6xl mb-4">📦</div>
+                  <p class="text-lg">No products added yet</p>
+                  <p class="text-sm">Add your first product using the form above</p>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="save-btn-container" class="mt-6 text-right">
+        <form action="/save_all" method="post">
+          <button type="submit"
+                  class="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold py-3 px-8 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105">
+            ✅ Save All to Database
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Product Management Section -->
+    <div class="bg-white rounded-2xl shadow-xl p-6 hover-scale">
+      <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+        🔍 <span class="ml-2">Product Management</span>
+      </h2>
+      
+      <div class="flex flex-col sm:flex-row gap-4 mb-6">
+        <div class="flex-1">
+          <input type="text" id="live-search" placeholder="Search products by name..." 
+                 class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+        <button id="show-all-btn"
+                class="bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white px-6 py-3 rounded-lg font-semibold shadow-lg transition-all duration-200 transform hover:scale-105">
+          Show All Products
+        </button>
+      </div>
+
+      <div id="search-results" class="hidden">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Search Results</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full table-auto">
+            <thead>
+              <tr class="bg-gradient-to-r from-gray-50 to-gray-100">
+                <th class="text-left py-3 px-4 font-semibold text-gray-700">Barcode</th>
+                <th class="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
+                <th class="text-left py-3 px-4 font-semibold text-gray-700">Tamil Name</th>
+                <th class="text-left py-3 px-4 font-semibold text-gray-700">Measure</th>
+                <th class="text-left py-3 px-4 font-semibold text-gray-700">Qty</th>
+                <th class="text-left py-3 px-4 font-semibold text-gray-700">MRP</th>
+                <th class="text-left py-3 px-4 font-semibold text-gray-700">Retail</th>
+                <th class="text-left py-3 px-4 font-semibold text-gray-700">Edit</th>
+              </tr>
+            </thead>
+            <tbody id="search-results-tbody">
+              <!-- Search results will be populated here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- All Products Modal -->
+  <div id="allProductsModal" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden items-center justify-center z-50">
+    <div class="bg-white rounded-2xl w-11/12 max-w-6xl max-h-[90vh] overflow-hidden shadow-2xl fade-in">
+      <div class="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <h3 class="text-2xl font-bold text-gray-800">All Products</h3>
+        <div class="flex items-center gap-4">
+          <input id="allProductsFilter" type="text" placeholder="Filter by name..." 
+                 class="border border-gray-300 rounded-lg px-4 py-2 w-64 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+          <button id="closeAllProducts" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors">
+            Close
+          </button>
+        </div>
+      </div>
+
+      <div class="p-4 overflow-auto" style="max-height: 70vh;">
+        <table id="allProductsTable" class="w-full table-auto">
+          <thead class="bg-gradient-to-r from-gray-50 to-gray-100 sticky top-0">
+            <tr>
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">Barcode</th>
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">Tamil</th>
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">Measure</th>
+              <th class="text-left py-3 px-4 font-semibold text-gray-700">Qty</th>
+              <th class="text-right py-3 px-4 font-semibold text-gray-700">MRP</th>
+              <th class="text-right py-3 px-4 font-semibold text-gray-700">Retail</th>
+              <th class="text-center py-3 px-4 font-semibold text-gray-700">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="allProductsTbody">
+            <!-- Products will be loaded here -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Product Modal -->
+  <div id="editProductModal" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden items-center justify-center z-[60]">
+    <div class="bg-white rounded-2xl w-11/12 max-w-2xl overflow-hidden shadow-2xl fade-in">
+      <div class="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50 flex items-center justify-between">
+        <h3 class="text-2xl font-bold text-gray-800">Edit Product</h3>
+        <button id="closeEditModal" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors">
+          Close
+        </button>
+      </div>
+
+      <form id="editProductForm" class="p-6 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Barcode</label>
+          <input id="edit_barcode" name="barcode" type="text" readonly 
+                 class="w-full border border-gray-300 rounded-lg p-3 bg-gray-50 text-gray-600">
+        </div>
+        
+        <div class="grid md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Name</label>
+            <input id="edit_name" name="name" type="text" placeholder="Product Name" required 
+                   class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Tamil Name</label>
+            <input id="edit_tamil_name" name="tamil_name" type="text" placeholder="Tamil Name" 
+                   class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+          </div>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Measure</label>
+            <input id="edit_measure" name="measure" placeholder="Measure" 
+                   class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
+            <input id="edit_quantity" name="quantity" type="number" step="0.01" placeholder="Quantity" 
+                   class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">MRP</label>
+            <input id="edit_mrp" name="mrp" type="number" step="0.01" placeholder="MRP" 
+                   class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Retail Price</label>
+          <input id="edit_retail_price" name="retail_price" type="number" step="0.01" placeholder="Retail Price" 
+                 class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+
+        <div class="flex justify-end gap-4 pt-4">
+          <button type="button" id="cancelEdit" 
+                  class="px-6 py-3 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold transition-colors">
+            Cancel
+          </button>
+          <button type="submit" id="saveEditBtn" 
+                  class="px-6 py-3 rounded-lg bg-green-500 hover:bg-green-600 text-white font-semibold transition-colors">
+            Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Barcode Add Modal -->
+  <div id="barcodePanel" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden items-center justify-center z-50">
+    <div class="bg-white rounded-2xl w-11/12 max-w-2xl overflow-hidden shadow-2xl fade-in">
+      <div class="p-6 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-purple-50 flex items-center justify-between">
+        <h3 class="text-2xl font-bold text-gray-800">Add Product — By Barcode</h3>
+        <button id="closeBarcodePanel" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors">
+          Close
+        </button>
+      </div>
+
+      <form id="barcode-add-form" action="/add_by_barcode" method="post" class="p-6 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Scan/Enter Barcode</label>
+          <input id="barcode_input" type="text" name="barcode" placeholder="Scan barcode or type it" required
+                 class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+        </div>
+
+        <div class="flex items-center gap-3">
+          <input id="use_g2p_barcode" name="use_g2p" type="checkbox" class="h-4 w-4 text-indigo-600 rounded focus:ring-indigo-500">
+          <label for="use_g2p_barcode" class="text-sm font-medium text-gray-700">Tamil Name</label>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Product Name (English)</label>
+          <input id="barcode_name" type="text" name="name" placeholder="Product Name" required
+                 class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Measure</label>
+            <select name="measure" required class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+              <option value="kg">Kilogram (kg)</option>
+              <option value="g">Gram (g)</option>
+              <option value="l">Liter (l)</option>
+              <option value="ml">Milliliter (ml)</option>
+              <option value="count">Count/Pieces</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
+            <input id="barcode_quantity" name="quantity" type="number" step="0.01" placeholder="Quantity" required
+                   class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">MRP (₹)</label>
+            <input id="barcode_mrp" name="mrp" type="number" step="0.01" placeholder="MRP" required
+                   class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Retail Price (₹)</label>
+          <input id="barcode_retail_price" name="retail_price" type="number" step="0.01" placeholder="Retail Price" required
+                 class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+        </div>
+
+        <div class="flex items-center justify-end gap-4 pt-4">
+          <button type="button" id="cancelBarcode" 
+                  class="px-6 py-3 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold transition-colors">
+            Cancel
+          </button>
+          <button id="barcode-submit" type="submit" 
+                  class="px-6 py-3 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-semibold transition-colors">
+            Add Product
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Focus name input on page load
+    function focusName() {
+      const el = document.getElementById('name');
+      if (el) el.focus();
+    }
+    document.addEventListener('DOMContentLoaded', focusName);
+    window.addEventListener('pageshow', function (e) {
+      if (e.persisted) focusName();
+    });
+
+    // Form validation - check retail price vs MRP
+    function validatePrice(mrpId, retailId, alertMessage) {
+      const mrp = parseFloat(document.getElementById(mrpId).value);
+      const retail = parseFloat(document.getElementById(retailId).value);
+      if (retail > mrp) {
+        alert(alertMessage);
+        return false;
+      }
+      return true;
+    }
+
+    // Add form validation
+    document.getElementById('add-form').addEventListener('submit', function(e) {
+      if (!validatePrice('mrp', 'retail_price', 'விற்பனை விலை எம்.ஆர்.பி.யை விட அதிகம் இருக்கக் கூடாது')) {
+        e.preventDefault();
+      }
+    });
+
+    // Barcode form validation
+    const barcodeForm = document.getElementById('barcode-add-form');
+    if (barcodeForm) {
+      barcodeForm.addEventListener('submit', function(e) {
+        if (!validatePrice('barcode_mrp', 'barcode_retail_price', 'விற்பனை விலை எம்.ஆர்.பி.யை விட அதிகம் இருக்கக் கூடாது')) {
+          e.preventDefault();
+        }
+      });
+    }
+
+    // Edit form validation
+    const editForm = document.getElementById('editProductForm');
+    if (editForm) {
+      editForm.addEventListener('submit', function(e) {
+        if (!validatePrice('edit_mrp', 'edit_retail_price', 'விற்பனை விலை எம்.ஆர்.பி.யை விட அதிகம் இருக்கக் கூடாது')) {
+          e.preventDefault();
+        }
+      });
+    }
+
+    // Modal handlers
+    const modals = {
+      barcode: {
+        panel: document.getElementById('barcodePanel'),
+        openBtn: document.getElementById('openBarcodePanel'),
+        closeBtn: document.getElementById('closeBarcodePanel'),
+        cancelBtn: document.getElementById('cancelBarcode')
+      },
+      allProducts: {
+        panel: document.getElementById('allProductsModal'),
+        openBtn: document.getElementById('show-all-btn'),
+        closeBtn: document.getElementById('closeAllProducts')
+      },
+      edit: {
+        panel: document.getElementById('editProductModal'),
+        closeBtn: document.getElementById('closeEditModal'),
+        cancelBtn: document.getElementById('cancelEdit')
+      }
+    };
+
+    // Open barcode modal
+    if (modals.barcode.openBtn) {
+      modals.barcode.openBtn.addEventListener('click', () => {
+        modals.barcode.panel.classList.remove('hidden');
+        modals.barcode.panel.style.display = 'flex';
+        setTimeout(() => {
+          const inp = document.getElementById('barcode_input');
+          if (inp) { inp.focus(); inp.select(); }
+        }, 100);
+      });
+    }
+
+    // Close barcode modal
+    function closeBarcodePanel() {
+      if (modals.barcode.panel) {
+        modals.barcode.panel.classList.add('hidden');
+        modals.barcode.panel.style.display = 'none';
+        if (barcodeForm) barcodeForm.reset();
+        focusName();
+      }
+    }
+
+    if (modals.barcode.closeBtn) modals.barcode.closeBtn.addEventListener('click', closeBarcodePanel);
+    if (modals.barcode.cancelBtn) modals.barcode.cancelBtn.addEventListener('click', closeBarcodePanel);
+
+    // Close modal when clicking outside
+    Object.values(modals).forEach(modal => {
+      if (modal.panel) {
+        modal.panel.addEventListener('click', (e) => {
+          if (e.target === modal.panel) {
+            modal.panel.classList.add('hidden');
+            modal.panel.style.display = 'none';
+          }
+        });
+      }
+    });
+
+    // Show all products functionality
+    if (modals.allProducts.openBtn) {
+      modals.allProducts.openBtn.addEventListener('click', async () => {
+        try {
+          modals.allProducts.openBtn.disabled = true;
+          modals.allProducts.openBtn.textContent = 'Loading...';
+          
+          // Simulate API call - replace with actual endpoint
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          modals.allProducts.panel.classList.remove('hidden');
+          modals.allProducts.panel.style.display = 'flex';
+          
+          const filter = document.getElementById('allProductsFilter');
+          if (filter) filter.focus();
+          
+        } catch (error) {
+          console.error('Error loading products:', error);
+          alert('Failed to load products');
+        } finally {
+          modals.allProducts.openBtn.disabled = false;
+          modals.allProducts.openBtn.textContent = 'Show All Products';
+        }
+      });
+    }
+
+    // Close all products modal
+    if (modals.allProducts.closeBtn) {
+      modals.allProducts.closeBtn.addEventListener('click', () => {
+        modals.allProducts.panel.classList.add('hidden');
+        modals.allProducts.panel.style.display = 'none';
+      });
+    }
+
+    // Close edit modal
+    function closeEditModal() {
+      if (modals.edit.panel) {
+        modals.edit.panel.classList.add('hidden');
+        modals.edit.panel.style.display = 'none';
+        if (editForm) editForm.reset();
+      }
+    }
+
+    if (modals.edit.closeBtn) modals.edit.closeBtn.addEventListener('click', closeEditModal);
+    if (modals.edit.cancelBtn) modals.edit.cancelBtn.addEventListener('click', closeEditModal);
+
+    // Temp product delete functionality
+    const tempTbody = document.getElementById('temp-tbody');
+    if (tempTbody) {
+      tempTbody.addEventListener('click', async (ev) => {
+        const btn = ev.target.closest('.temp-delete-btn');
+        if (!btn) return;
+
+        const row = btn.closest('tr');
+        if (!confirm('Delete this product from the temporary list?')) return;
+
+        try {
+          btn.disabled = true;
+          // Simulate API call - replace with actual endpoint
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Remove row with animation
+          row.style.opacity = '0';
+          row.style.transform = 'translateX(-20px)';
+          setTimeout(() => row.remove(), 300);
+
+          // Check if list is empty and show empty state
+          const remainingRows = tempTbody.querySelectorAll('tr:not(#empty-row)');
+          if (remainingRows.length <= 1) { // Only the row being deleted
+            const emptyRow = document.getElementById('empty-row');
+            if (emptyRow) {
+              emptyRow.classList.remove('hidden');
+            }
+            const saveBtnContainer = document.getElementById('save-btn-container');
+            if (saveBtnContainer) {
+              saveBtnContainer.classList.add('hidden');
+            }
+          }
+
+        } catch (err) {
+          console.error('Failed to delete product:', err);
+          alert('Delete failed: ' + (err.message || 'unknown error'));
+          btn.disabled = false;
+        }
+      });
+    }
+
+    // Search functionality
+    const searchInput = document.getElementById('live-search');
+    const searchResults = document.getElementById('search-results');
+    
+    if (searchInput) {
+      let searchTimeout;
+      searchInput.addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        const query = this.value.trim();
+        
+        if (query.length < 2) {
+          if (searchResults) searchResults.classList.add('hidden');
+          return;
+        }
+
+        searchTimeout = setTimeout(async () => {
+          try {
+            // Simulate search API call
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Show search results section
+            if (searchResults) {
+              searchResults.classList.remove('hidden');
+              // You would populate actual search results here
+            }
+          } catch (error) {
+            console.error('Search failed:', error);
+          }
+        }, 500);
+      });
+    }
+
+    // Add some demo interactivity for the sample row
+    document.addEventListener('DOMContentLoaded', function() {
+      // Add hover effects and transitions
+      const cards = document.querySelectorAll('.hover-scale');
+      cards.forEach(card => {
+        card.addEventListener('mouseenter', function() {
+          this.style.transform = 'scale(1.02)';
+          this.style.transition = 'transform 0.2s ease';
+        });
+        
+        card.addEventListener('mouseleave', function() {
+          this.style.transform = 'scale(1)';
+        });
+      });
+
+      // Add loading states to buttons
+      const buttons = document.querySelectorAll('button[type="submit"]');
+      buttons.forEach(button => {
+        button.addEventListener('click', function() {
+          if (this.type === 'submit') {
+            const originalText = this.textContent;
+            this.disabled = true;
+            this.textContent = 'Processing...';
+            
+            // Re-enable after a delay (for demo purposes)
+            setTimeout(() => {
+              this.disabled = false;
+              this.textContent = originalText;
+            }, 2000);
+          }
+        });
+      });
+    });
+
+    // Utility function for escape HTML
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Console welcome message
+    console.log('🛒 Supermarket Product Entry System Loaded');
+    console.log('Ready for product management!');
+  </script>
+
+</body>
+</html>

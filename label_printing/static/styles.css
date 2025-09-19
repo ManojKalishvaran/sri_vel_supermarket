@@ -2,7 +2,7 @@
 body {
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   margin: 0;
-  background: #f6f7fb;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.55), rgba(165, 165, 165, 0.658));
   color: #222;
 }
 .container {
@@ -22,7 +22,7 @@ h1 { margin: 0 0 4px; font-size: 22px; }
 .store input { padding: 8px 10px; border-radius: 8px; border: 1px solid #ccc; background: #fff; }
 
 section.picker {
-  background: #fff;
+  background: #f7f8eb;
   padding: 16px;
   border-radius: 16px;
   box-shadow: 0 4px 14px rgba(0,0,0,.06);
@@ -63,7 +63,7 @@ input[type="text"], input[type="number"] {
   padding: 12px 18px;
   border: none;
   border-radius: 12px;
-  background: #1f6feb;
+  background: #f7f8eb;
   color: white;
   font-weight: 600;
   cursor: pointer;
@@ -74,7 +74,7 @@ input[type="text"], input[type="number"] {
 }
 
 section.preview {
-  background: #fff;
+  background: #f7f8eb;
   padding: 16px;
   border-radius: 16px;
   box-shadow: 0 4px 14px rgba(0,0,0,.06);

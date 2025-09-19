@@ -186,7 +186,7 @@ def init_db():
 def home():
     if "temp_products" not in session:
         session["temp_products"] = []
-    return render_template("index.html", temp_products=session["temp_products"])
+    return render_template("index2.html", temp_products=session["temp_products"])
 
 
 @app.route('/delete_temp/<barcode>', methods=['POST'])
@@ -232,7 +232,7 @@ def add_temp():
     print(f"{name = }")
     # choose which tamil-name generator to use:
     use_g2p = request.form.get("use_g2p")  # returns 'on' if checkbox checked, otherwise None
-    if use_g2p:
+    if not use_g2p:
         try:
             tamil_name = eng_to_tamil_g2p_better(name)
         except Exception as e:
@@ -316,7 +316,7 @@ def add_by_barcode():
 
     # Decide which tamil-name generator to use
     use_g2p = request.form.get("use_g2p")
-    if use_g2p:
+    if not use_g2p:
         try:
             tamil_name = eng_to_tamil_g2p_better(name_cap)
         except Exception as e:
@@ -406,7 +406,7 @@ def search_products():
         """, (f"%{query}%", f"%{query}%", f"%{query}%"))
         results = [dict(row) for row in cursor.fetchall()]
         conn.close()
-    return render_template("index.html", temp_products=session.get("temp_products", []), results=results, search_query=query)
+    return render_template("index2.html", temp_products=session.get("temp_products", []), results=results, search_query=query)
 
 
 @app.route("/api/search")
