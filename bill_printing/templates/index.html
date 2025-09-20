@@ -677,76 +677,153 @@ function addItem() {
     clearProductForm();
 }
 
-    function editItem(index) {
-        const it = items[index];
-        if (!it) return;
-        editingIndex = index;
-        document.getElementById('productName').value = it.name;
-        document.getElementById('quantity').value = it.quantity;
-        document.getElementById('unit').value = it.unit || 'count';
-        document.getElementById('mrp').value = Number(it.mrp).toFixed(2);
-        document.getElementById('retailPrice').value = Number(it.retail_price).toFixed(2);
-        document.getElementById('addBtn').textContent = 'புதுப்பிக்க'; // Update
-        // highlight row visually
-        Array.from(document.querySelectorAll('#itemsTableBody tr')).forEach((tr, idx) => {
-            tr.classList.toggle('editing-row', idx === index);
-        });
-        document.getElementById('productName').focus();
+function editItem(index) {
+    // keep backward compatibility: focusing the first input (productName in table)
+    const row = document.querySelector(`#itemsTableBody tr[data-index='${index}']`);
+    if (!row) return;
+    const nameInput = row.querySelector('.row-name');
+    if (nameInput) nameInput.focus();
+}
+
+
+function removeItem(index) {
+    if (!confirm('இந்த பொருளை நீக்க விரும்புகிறீர்களா?')) return;
+    items.splice(index, 1);
+    editingIndex = -1;
+    document.getElementById('addBtn').textContent = 'பொருள் சேர்க்க';
+    updateItemsTable();
+    showAlert('பொருள் நீக்கப்பட்டது');
+}
+
+// Called when the inline Save button is pressed
+function saveRow(index) {
+    const row = document.querySelector(`#itemsTableBody tr[data-index='${index}']`);
+    if (!row) return showAlert('Row not found', 'error');
+
+    // read values from inputs
+    const name = row.querySelector('.row-name').value.trim();
+    const tamilName = row.querySelector('.row-tamilname') ? row.querySelector('.row-tamilname').value.trim() : '';
+    const qtyVal = row.querySelector('.row-qty').value;
+    const qty = parseFloat(qtyVal || '0');
+    const unit = row.querySelector('.row-unit').value;
+    const mrp = parseFloat(row.querySelector('.row-mrp').value || '0');
+    const retail = parseFloat(row.querySelector('.row-retail').value || '0');
+
+    // basic validation
+    if (!name || !qty || isNaN(qty) || isNaN(mrp) || isNaN(retail)) {
+        showAlert('சரியான பொருள் விவரங்களை உள்ளிடவும்', 'error');
+        return;
     }
+    if (qty <= 0) { showAlert('அளவு 0 விட அதிகமாக இருக்க வேண்டும்', 'error'); return; }
+    if (retail > mrp) { showAlert('விற்பனை விலை எம்.ஆர்.பி.யை விட அதிகம் இருக்கக்கூடாது', 'error'); return; }
 
-        function removeItem(index) {
-            if (!confirm('இந்த பொருளை நீக்க விரும்புகிறீர்களா?')) return;
-            items.splice(index, 1);
-            editingIndex = -1;
-            document.getElementById('addBtn').textContent = 'பொருள் சேர்க்க';
-            updateItemsTable();
-            showAlert('பொருள் நீக்கப்பட்டது');
-        }
+    // update data model
+    items[index].name = name;
+    items[index].tamil_name = tamilName || items[index].tamil_name || '';
+    items[index].quantity = qty;
+    items[index].unit = unit;
+    items[index].mrp = mrp;
+    items[index].retail_price = retail;
+    items[index].total = Number((retail * qty).toFixed(2));
 
-function updateItemsTable() {
+    showAlert('பொருள் புதுப்பிக்கப்பட்டது');
+    updateItemsTable();
+}
+
+// live update of row preview (total, savings) while editing
+function updateRowPreview(index) {
+    const row = document.querySelector(`#itemsTableBody tr[data-index='${index}']`);
+    if (!row) return;
+    const qty = parseFloat(row.querySelector('.row-qty').value || '0') || 0;
+    const mrp = parseFloat(row.querySelector('.row-mrp').value || '0') || 0;
+    const retail = parseFloat(row.querySelector('.row-retail').value || '0') || 0;
+    const total = (retail * qty) || 0;
+    const savings = ((mrp - retail) * qty) || 0;
+
+    const totalCell = row.querySelector('.row-total-cell');
+    const savingsCell = row.querySelector('.row-savings-cell');
+    if (totalCell) totalCell.textContent = `₹${Number(total).toFixed(2)}`;
+    if (savingsCell) savingsCell.textContent = `₹${Number(savings).toFixed(2)}`;
+
+    // recalc overall totals from current DOM values (so staff sees live totals before Save)
+    recalcTotalsFromDOM();
+}
+
+function recalcTotalsFromDOM() {
     const tbody = document.getElementById('itemsTableBody');
-    tbody.innerHTML = '';
+    const trs = Array.from(tbody.querySelectorAll('tr[data-index]'));
     let totalItems = 0, subtotal = 0, totalSavings = 0;
-    items.forEach((item, i) => {
-        // Normalise numeric fields for display
-        const qty = Number(item.quantity);
-        const retail = Number(item.retail_price);
-        const mrp = Number(item.mrp);
-        const total = Number(item.total) || (retail * qty);
-        const savings = (mrp - retail) * qty;
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>
-            <div style="font-weight:700;">${escapeHtml(item.tamil_name || item.name)}</div>
-            <div style="font-size:11px; color:#6b7280;">${item.tamil_name ? escapeHtml(item.name) : ''}</div>
-            </td>
-            <td>${qty} ${item.unit}</td>
-            <td>₹${retail.toFixed(2)}</td>
-            <td>₹${total.toFixed(2)}</td>
-            <td>₹${savings.toFixed(2)}</td>
-            <td>
-                <button class="btn" onclick="editItem(${i})">Edit</button>
-                <button class="btn btn-danger" onclick="removeItem(${i})">நீக்கு</button>
-            </td>
-        `;
-        tbody.appendChild(tr);
+    trs.forEach(tr => {
+        const qty = parseFloat(tr.querySelector('.row-qty').value || '0') || 0;
+        const totalText = tr.querySelector('.row-total-cell').textContent.replace(/[^0-9.-]+/g, '') || '0';
+        const savingsText = tr.querySelector('.row-savings-cell').textContent.replace(/[^0-9.-]+/g, '') || '0';
         totalItems += qty;
-        subtotal += total;
-        totalSavings += savings;
+        subtotal += parseFloat(totalText) || 0;
+        totalSavings += parseFloat(savingsText) || 0;
     });
+
     document.getElementById('totalUniqueProducts').textContent = items.length;
     document.getElementById('totalItems').textContent = totalItems;
     document.getElementById('subtotal').textContent = subtotal.toFixed(2);
     document.getElementById('totalSavings').textContent = totalSavings.toFixed(2);
     document.getElementById('pointsEarned').textContent = Math.floor(subtotal / 100);
     calculateCashBalance();
-
-    // clear any editing row highlight if not editing
-    if (editingIndex === -1) {
-        Array.from(document.querySelectorAll('#itemsTableBody tr')).forEach(tr => tr.classList.remove('editing-row'));
-    }
 }
+
+
+function updateItemsTable() {
+    const tbody = document.getElementById('itemsTableBody');
+    tbody.innerHTML = '';
+    if (!Array.isArray(items)) items = [];
+
+    items.forEach((item, i) => {
+        // Normalise numeric fields for display
+        const qty = Number(item.quantity) || 0;
+        const retail = Number(item.retail_price) || 0;
+        const mrp = Number(item.mrp) || 0;
+        const total = Number(item.total) || (retail * qty);
+        const savings = (mrp - retail) * qty;
+
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-index', i);
+
+        // build each cell as inputs so user can edit inline
+        tr.innerHTML = `
+            <td style="min-width:240px;">
+                <input type="text" class="row-name" value="${escapeHtml(item.name || '')}" style="width:100%; font-weight:700; border:0; background:transparent;" />
+                <input type="text" class="row-tamilname" value="${escapeHtml(item.tamil_name || '')}" placeholder="Tamil name (optional)" style="width:100%; font-size:11px; color:#6b7280; border:0; background:transparent;" />
+            </td>
+            <td style="white-space:nowrap;">
+                <input type="number" min="0" step="1" class="row-qty" value="${qty}" style="width:68px; padding:6px; border-radius:6px; border:1px solid #e2e8f0;" oninput="updateRowPreview(${i})" />
+                <select class="row-unit" onchange="updateRowPreview(${i})" style="margin-left:6px; padding:6px; border-radius:6px; border:1px solid #e2e8f0;">
+                    <option value="kg" ${item.unit === 'kg' ? 'selected':''}>kg</option>
+                    <option value="g" ${item.unit === 'g' ? 'selected':''}>g</option>
+                    <option value="l" ${item.unit === 'l' ? 'selected':''}>l</option>
+                    <option value="count" ${item.unit === 'count' ? 'selected':''}>count</option>
+                </select>
+            </td>
+            <td>
+                <input type="number" class="row-retail" step="0.01" min="0" value="${Number(retail).toFixed(2)}" style="width:95px; padding:6px; border-radius:6px; border:1px solid #e2e8f0;" oninput="updateRowPreview(${i})" />
+                <div style="font-size:11px; color:#6b7280; margin-top:4px;">MRP: <input type="number" class="row-mrp" step="0.01" min="0" value="${Number(mrp).toFixed(2)}" style="width:80px; padding:4px; border-radius:6px; border:1px solid #e2e8f0;" oninput="updateRowPreview(${i})" /></div>
+            </td>
+            <td class="row-total-cell">₹${Number(total).toFixed(2)}</td>
+            <td class="row-savings-cell">₹${Number(savings).toFixed(2)}</td>
+            <td>
+                <button class="btn" onclick="saveRow(${i})">Save</button>
+                <button class="btn btn-danger" onclick="removeItem(${i})">நீக்கு</button>
+            </td>
+        `;
+
+        tbody.appendChild(tr);
+    });
+
+    // after rendering rows, compute totals from DOM
+    recalcTotalsFromDOM();
+
+    // remove any extra highlights
+    Array.from(document.querySelectorAll('#itemsTableBody tr')).forEach(tr => tr.classList.remove('editing-row'));
+}
+
 
         function calculateCashBalance() {
             const subtotal = parseFloat(document.getElementById('subtotal').textContent) || 0;

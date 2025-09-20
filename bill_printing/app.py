@@ -11,6 +11,10 @@ import pywintypes
 
 app = Flask(__name__)
 
+# explicit bill printer (use the exact name shown in Windows Printers)
+BILL_PRINTER_NAME = os.environ.get('BILL_PRINTER', 'Retsol RTP-82 UE')
+
+
 # Create Data directory if not exists
 if not os.path.exists('Data'):
     os.makedirs('Data')
@@ -598,9 +602,13 @@ def create_bill():
 
                    # Printing: use printer HORZRES (printable width) and left-aligned layout
         try:
-            printer_name = win32print.GetDefaultPrinter()
+            # printer_name = win32print.GetDefaultPrinter()
+            # hDC = win32ui.CreateDC()
+            # hDC.CreatePrinterDC(printer_name)
+            printer_name = BILL_PRINTER_NAME
             hDC = win32ui.CreateDC()
             hDC.CreatePrinterDC(printer_name)
+
             hDC.StartDoc("Supermarket Bill")
             hDC.StartPage()
 

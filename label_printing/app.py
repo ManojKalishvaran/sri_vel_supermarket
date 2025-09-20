@@ -39,6 +39,7 @@ LABEL_SPACING_MM = 3.0   # gap between adjacent labels (horizontal & vertical)
 # Small global X offset to correct left/right shift of printed grid.
 # Negative moves labels left, positive moves labels right. Default tuned left (-0.6 mm).
 GLOBAL_X_OFFSET_MM = -0.6
+GLOBAL_Y_OFFSET_MM = -0.8
 
 PX_PER_MM = DPI / 25.4   # pixels per mm at given DPI
 
@@ -309,7 +310,9 @@ def compose_sheet(product: Dict[str, Any], count: int, store_name: str = STORE_N
     margin_x = int(round(PAGE_MARGIN_MM * PX_PER_MM))
     margin_y = int(round(PAGE_MARGIN_MM * PX_PER_MM))
     spacing = int(round(LABEL_SPACING_MM * PX_PER_MM))
+    
     global_x_offset = int(round(GLOBAL_X_OFFSET_MM * PX_PER_MM))
+    global_y_offset = int(round(GLOBAL_Y_OFFSET_MM * PX_PER_MM))
 
     sheet_w = margin_x * 2 + LABEL_W * LABELS_PER_ROW + spacing * (LABELS_PER_ROW - 1)
     sheet_h = margin_y * 2 + LABEL_H * rows + spacing * (rows - 1)
@@ -325,15 +328,51 @@ def compose_sheet(product: Dict[str, Any], count: int, store_name: str = STORE_N
                 pasted += 1
                 continue
             x = margin_x + c * (LABEL_W + spacing) + global_x_offset
-            y = margin_y + r * (LABEL_H + spacing)
+            y = margin_y + r * (LABEL_H + spacing) + global_y_offset
             sheet.paste(label_img, (x, y))
             pasted += 1
 
     return sheet
 
 
+# def print_image_windows(image_path: str, title: str = "Label Print", printer_name: str = None):
+#     """Print image to Windows printer (Rongta R220) with exact sizing."""
+#     if not WINDOWS_PRINTING_AVAILABLE:
+#         raise RuntimeError("Windows printing is not available on this system.")
+
+#     if not printer_name:
+#         printer_name = win32print.GetDefaultPrinter()
+
+#     img = Image.open(image_path)
+#     if img.mode != '1':
+#         img = img.convert('L')
+#         img = img.point(lambda x: 0 if x < 128 else 255, '1')  # crisp B/W
+
+#     hDC = win32ui.CreateDC()
+#     hDC.CreatePrinterDC(printer_name)
+
+#     dpi_x = hDC.GetDeviceCaps(88)  # LOGPIXELSX
+#     dpi_y = hDC.GetDeviceCaps(90)  # LOGPIXELSY
+
+#     # Convert image pixel size to printer DPI
+#     img_w = int(img.width * dpi_x / DPI)
+#     img_h = int(img.height * dpi_y / DPI)
+
+#     if img.size != (img_w, img_h):
+#         img = img.resize((img_w, img_h), Image.Resampling.NEAREST)
+
+#     hDC.StartDoc(title)
+#     hDC.StartPage()
+
+#     dib = ImageWin.Dib(img)
+#     dib.draw(hDC.GetHandleOutput(), (0, 0, img_w, img_h))
+
+#     hDC.EndPage()
+#     hDC.EndDoc()
+#     hDC.DeleteDC()
+
 def print_image_windows(image_path: str, title: str = "Label Print", printer_name: str = None):
-    """Print image to Windows printer (Rongta R220) with exact sizing."""
+    """Print image to Windows printer (Rongta R220) with exact sizing, paginated vertically."""
     if not WINDOWS_PRINTING_AVAILABLE:
         raise RuntimeError("Windows printing is not available on this system.")
 
@@ -345,29 +384,96 @@ def print_image_windows(image_path: str, title: str = "Label Print", printer_nam
         img = img.convert('L')
         img = img.point(lambda x: 0 if x < 128 else 255, '1')  # crisp B/W
 
+    # Create printer DC
     hDC = win32ui.CreateDC()
     hDC.CreatePrinterDC(printer_name)
 
+    # Device printable area in pixels
     dpi_x = hDC.GetDeviceCaps(88)  # LOGPIXELSX
     dpi_y = hDC.GetDeviceCaps(90)  # LOGPIXELSY
+    printable_w = hDC.GetDeviceCaps(8)   # HORZRES
+    printable_h = hDC.GetDeviceCaps(10)  # VERTRES
 
-    # Convert image pixel size to printer DPI
-    img_w = int(img.width * dpi_x / DPI)
-    img_h = int(img.height * dpi_y / DPI)
+    # Map printer printable pixel dims back to source image pixel dims (image is at DPI)
+    # source_slice_h is number of image pixels that map to one printer page height
+    source_slice_h = int(round(printable_h * DPI / dpi_y))
+    source_w = img.width
 
-    if img.size != (img_w, img_h):
-        img = img.resize((img_w, img_h), Image.Resampling.NEAREST)
-
+    # Loop slices
+    page_index = 0
+    y0 = 0
     hDC.StartDoc(title)
-    hDC.StartPage()
+    try:
+        while y0 < img.height:
+            y1 = min(img.height, y0 + source_slice_h)
+            slice_img = img.crop((0, y0, source_w, y1))
 
-    dib = ImageWin.Dib(img)
-    dib.draw(hDC.GetHandleOutput(), (0, 0, img_w, img_h))
+            # Now compute target size in printer pixels as done previously
+            target_w = int(slice_img.width * dpi_x / DPI)
+            target_h = int(slice_img.height * dpi_y / DPI)
 
-    hDC.EndPage()
-    hDC.EndDoc()
-    hDC.DeleteDC()
+            # Resize to printer pixel equivalent to avoid distortion
+            if slice_img.mode != "RGB":
+                slice_img = slice_img.convert("RGB")
+            slice_img = slice_img.resize((target_w, target_h), Image.Resampling.NEAREST)
 
+            hDC.StartPage()
+            dib = ImageWin.Dib(slice_img)
+            # Draw at (0,0). If you want center horizontally:
+            x_offset = max(0, (printable_w - target_w) // 2)
+            dib.draw(hDC.GetHandleOutput(), (x_offset, 0, x_offset + target_w, target_h))
+            hDC.EndPage()
+
+            page_index += 1
+            y0 += source_slice_h
+    finally:
+        hDC.EndDoc()
+        hDC.DeleteDC()
+
+
+# @app.post("/api/print")
+# def api_print():
+#     data = request.get_json(force=True)
+#     barcode = (data.get("barcode") or "").strip()
+#     count = int(data.get("count") or 1)
+#     store = (data.get("store_name") or STORE_NAME_DEFAULT).strip()
+#     exp = (data.get("exp") or "").strip()
+
+#     if not barcode:
+#         return jsonify({"ok": False, "error": "barcode is required"}), 400
+
+#     product = get_product_by_barcode(barcode)
+#     if not product:
+#         return jsonify({"ok": False, "error": "product not found"}), 404
+
+#     sheet = compose_sheet(product, count, store_name=store, exp=exp)
+#     tmp_path = os.path.abspath("label_sheet.png")
+#     sheet.save(tmp_path, format="PNG", dpi=(DPI, DPI))
+
+#     printed = 0
+#     errors = []
+#     try:
+#         print_image_windows(tmp_path, title="Labels", printer_name=PRINTER_NAME)
+#         printed = count
+#     except Exception as e:
+#         available = []
+#         try:
+#             available = [p[2] for p in win32print.EnumPrinters(2)]
+#         except Exception:
+#             pass
+#         errors.append(f"{str(e)} | Available printers: {available}")
+#         printed = 0
+
+#     try:
+#         os.remove(tmp_path)
+#     except Exception:
+#         pass
+
+#     return jsonify({
+#         "ok": printed == count,
+#         "printed": printed,
+#         "errors": errors
+#     }), (200 if printed == count else 500)
 
 @app.post("/api/print")
 def api_print():
@@ -379,6 +485,13 @@ def api_print():
 
     if not barcode:
         return jsonify({"ok": False, "error": "barcode is required"}), 400
+
+    # Enforce multiples of LABELS_PER_ROW
+    if count < LABELS_PER_ROW or (count % LABELS_PER_ROW) != 0:
+        return jsonify({
+            "ok": False,
+            "error": f"count must be a positive multiple of {LABELS_PER_ROW} (e.g. {LABELS_PER_ROW}, {LABELS_PER_ROW*2}, ...)"
+        }), 400
 
     product = get_product_by_barcode(barcode)
     if not product:
