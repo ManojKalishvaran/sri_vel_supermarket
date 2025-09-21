@@ -12,7 +12,7 @@ import pywintypes
 app = Flask(__name__)
 
 # explicit bill printer (use the exact name shown in Windows Printers)
-BILL_PRINTER_NAME = os.environ.get('BILL_PRINTER', 'Retsol RTP-82 UE')
+BILL_PRINTER_NAME = os.environ.get('BILL_PRINTER', 'RETSOL RTP 82UE')
 
 
 # Create Data directory if not exists
@@ -245,144 +245,56 @@ def wrap_text_to_max_lines(s, char_width, max_lines=2):
     
 #     return '\n'.join(lines)
 
-def format_thermal_bill(items, width=38, hDC=None):
+def format_thermal_bill(items, width=42, hDC=None):
     """
-    Render items into a column-aligned bill.
-    - If hDC is provided, columns are allocated in PIXELS and aligned using GetTextExtent (accurate for Tamil).
-    - Otherwise, fallback to approximate MONOSPACE character columns (for text preview).
-    Args:
-      items: list of dicts with keys: product_name, quantity, mrp, retail_price, total_price
-      width: when hDC is None, this is the character width per line (old behavior). When hDC provided, ignored.
-      hDC: optional win32ui device context for pixel measurement.
-    Returns:
-      Multiline string where columns are aligned.
+    Layout: product name at left (ljust), numeric columns right-aligned.
+    This is the safe character-based fallback used for preview strings.
+    If hDC is provided, the other pixel-accurate branch is used elsewhere.
     """
-    # Column names (Tamil)
-    hdr_name = "பொருள்"
-    hdr_qty = "அளவு"
-    hdr_mrp = "MRP"
-    hdr_rate = "விலை"
-    hdr_tot = "தொகை"
+    # column widths in characters (tuned for narrow receipt)
+    name_w = 24   # product name column (left)
+    qty_w = 6     # quantity (right)
+    mrp_w = 8     # mrp (right)
+    rate_w = 8    # retail price (right)
+    tot_w = 8     # total (right)
 
-    if hDC:
-        # Pixel-based layout ------------------------------------------------
-        try:
-            # use printable width available from the DC or reasonable defaults
-            printable_px = hDC.GetDeviceCaps(win32con.HORZRES) or 380
-        except Exception:
-            printable_px = 380
+    header = (
+        f"{'பொருள்'.ljust(name_w)}"
+        f"{'அளவு'.rjust(qty_w)}"
+        f"{'MRP'.rjust(mrp_w)}"
+        f"{'விலை'.rjust(rate_w)}"
+        f"{'தொகை'.rjust(tot_w)}"
+    )
 
-        margin = max(8, int(0.03 * printable_px))
-        content_px = max(200, printable_px - margin * 2)
+    lines = ['-' * width, header, '-' * width]
 
-        # column distribution (tuned for narrow thermal paper)
-        pct = {'name': 0.50, 'qty': 0.10, 'mrp': 0.13, 'rate': 0.13, 'total': 0.14}
-        name_px = int(content_px * pct['name'])
-        qty_px = int(content_px * pct['qty'])
-        mrp_px = int(content_px * pct['mrp'])
-        rate_px = int(content_px * pct['rate'])
-        total_px = int(content_px * pct['total'])
+    for item in items:
+        # numeric strings
+        qty = str(int(item.get('quantity', 0))) if float(item.get('quantity', 0)).is_integer() else str(item.get('quantity', 0))
+        mrp_val = f"{float(item.get('mrp', 0)):.2f}"
+        rate_val = f"{float(item.get('retail_price', 0)):.2f}"
+        total_val = f"{float(item.get('total_price', 0)):.2f}"
 
-        # helpers
-        def pw(s): return hDC.GetTextExtent(str(s))[0]
-        def wrap_px(text, max_px, max_lines=2):
-            return split_text_to_pixel_width(text, max_px, hDC, max_lines=max_lines, ellipsis='...')
+        # Wrap product name (2 lines max)
+        name_lines = wrap_text_to_max_lines(str(item.get('product_name', '')), name_w, max_lines=2)
 
-        lines = []
-        # header
-        sep = '-' * (max(20, content_px // (hDC.GetTextExtent('0')[0] or 6)))
-        lines.append(sep)
-        # header line: place headings using pixel offsets
-        # we'll build a blank buffer line and then place values by padding spaces as approximate fallback
-        # But for accurate preview use the pixel widths below to compute spacing.
-        # Build header string using measured widths (approximate, with spaces)
-        header = hdr_name.ljust(12)  # visible label left
-        # for headers we don't need perfect pixel alignment in the text-mode (printer uses DC)
-        header += f"{hdr_qty.rjust(6)}{hdr_mrp.rjust(8)}{hdr_rate.rjust(8)}{hdr_tot.rjust(8)}"
-        lines.append(header)
-        lines.append(sep)
+        # First line: product name left, numbers right
+        first_line = (
+            f"{name_lines[0].ljust(name_w)}"
+            f"{qty.rjust(qty_w)}"
+            f"{mrp_val.rjust(mrp_w)}"
+            f"{rate_val.rjust(rate_w)}"
+            f"{total_val.rjust(tot_w)}"
+        )
+        lines.append(first_line)
 
-        for item in items:
-            qty = str(int(item.get('quantity', 0))) if float(item.get('quantity', 0)).is_integer() else str(item.get('quantity'))
-            mrp_val = f"{float(item.get('mrp',0)):.2f}"
-            rate_val = f"{float(item.get('retail_price',0)):.2f}"
-            total_val = f"{float(item.get('total_price',0)):.2f}"
+        # Continuation lines: only product name left (numbers already printed)
+        for cont in name_lines[1:]:
+            lines.append(cont.ljust(name_w))
 
-            name_lines = wrap_px(str(item.get('product_name','')), name_px, max_lines=2)
+        lines.append('-' * width)
 
-            # first line: place numbers at the right edges (approximate text output)
-            # compute needed spaces based on pixel widths -> convert to space count using width of '0'
-            zero_w = pw('0') or 6
-            # build a text line using raw pieces and padding in characters
-            left_text = name_lines[0]
-            # measure left_text pixel width, compute remaining pixel room to qty column
-            left_px = pw(left_text)
-            # position numbers by making a padding of spaces whose pixel-size approximates the gap
-            # compute target positions (relative)
-            qty_target_x = name_px
-            mrp_target_x = name_px + qty_px
-            rate_target_x = name_px + qty_px + mrp_px
-            total_target_x = name_px + qty_px + mrp_px + rate_px
-
-            def px_to_spaces(px):
-                return max(1, int(px / zero_w))
-
-            # create padding string to position qty
-            pad1 = px_to_spaces(max(0, qty_target_x - left_px))
-            line = left_text + (' ' * pad1)
-            # append qty right-aligned inside qty box
-            qty_spaces = px_to_spaces(max(0, qty_px - pw(qty)))
-            line += (' ' * max(0, qty_spaces - len(qty))) + qty
-            # mrp
-            mrp_spaces = px_to_spaces(max(1, mrp_px - pw(mrp_val)))
-            line += (' ' * mrp_spaces) + mrp_val
-            # rate
-            rate_spaces = px_to_spaces(max(1, rate_px - pw(rate_val)))
-            line += (' ' * rate_spaces) + rate_val
-            # total
-            tot_spaces = px_to_spaces(max(1, total_px - pw(total_val)))
-            line += (' ' * tot_spaces) + total_val
-
-            lines.append(line)
-
-            # continuation lines for long name
-            for cont in name_lines[1:]:
-                lines.append(cont)
-            lines.append(sep)
-
-        return '\n'.join(lines)
-
-    else:
-        # Character/monospace fallback ---------------------------------------
-        # When hDC not provided (e.g., JSON preview), fallback to character widths.
-        # Make columns sum to `width` characters (width like 38 typical for 7.5cm thermal)
-        # Tuned columns (sum ~= width)
-        name_w = int(width * 0.50)        # product name
-        qty_w = max(4, int(width * 0.10)) # qty
-        mrp_w = max(6, int(width * 0.13)) # mrp
-        rate_w = max(6, int(width * 0.13))# rate
-        tot_w = max(6, width - (name_w + qty_w + mrp_w + rate_w))
-
-        header = f"{hdr_name:<{name_w}}{hdr_qty:>{qty_w}}{hdr_mrp:>{mrp_w}}{hdr_rate:>{rate_w}}{hdr_tot:>{tot_w}}"
-        sep = '=' * width
-        lines = [sep, header, sep]
-
-        for item in items:
-            qty = str(int(item.get('quantity', 0))) if float(item.get('quantity', 0)).is_integer() else str(item.get('quantity'))
-            mrp_val = f"{float(item.get('mrp',0)):.2f}"
-            rate_val = f"{float(item.get('retail_price',0)):.2f}"
-            total_val = f"{float(item.get('total_price',0)):.2f}"
-
-            # wrap name by character width (best-effort)
-            name_lines = wrap_text_to_max_lines(str(item.get('product_name','')), name_w, max_lines=2)
-
-            first_line = name_lines[0].ljust(name_w) + qty.rjust(qty_w) + mrp_val.rjust(mrp_w) + rate_val.rjust(rate_w) + total_val.rjust(tot_w)
-            lines.append(first_line)
-            for cont in name_lines[1:]:
-                lines.append(cont.ljust(name_w))
-            lines.append('-' * width)
-
-        return '\n'.join(lines)
+    return '\n'.join(lines)
 
 
 def split_text_to_pixel_width(text, max_px, hDC, max_lines=2, ellipsis='...'):
@@ -409,17 +321,18 @@ def split_text_to_pixel_width(text, max_px, hDC, max_lines=2, ellipsis='...'):
     return lines
 
 def generate_bill_string(bill_data, customer_data, items_data):
-    WIDTH = 38
+    WIDTH = 70
     SEP = '_' * WIDTH
     SEP2 = '-' * WIDTH
     header_lines = [
         SEP,
-        "   SRI VELAVAN SUPERMARKET",
-        "   2/136A, Pillaiyar Koil Street",
-        "   A.Kottarakuppam, Virudhachalam",
-        "   Ph: 9626475471  GST:33FLEPM3791Q1ZD",
+        "SRI VELAVAN SUPERMARKET".center(60),
+        "2/136A, Pillaiyar Koil Street".center(WIDTH),
+        "A.Kottarakuppam, Virudhachalam".center(WIDTH),
+        "Ph: 9626475471  GST:33FLEPM3791Q1ZD".center(WIDTH),
         SEP2
     ]
+
     bill_string = '\n'.join(header_lines) + '\n'
     bill_string += f"பில் எண் : {bill_data['bill_number']}\nதேதி     : {bill_data['date']} {bill_data['time']}\n{SEP2}\n"
     bill_string += "வாடிக்கையாளர்:\n"
@@ -446,7 +359,7 @@ def generate_bill_string(bill_data, customer_data, items_data):
     bill_string += f"சம்பாதித்த புள்ளிகள்: {bill_data['points_earned']}\n"
     bill_string += SEP2 + '\n'
     bill_string += "     நன்றி! மீண்டும் வாருங்கள்!\n"
-    bill_string += SEP + '\n'
+    bill_string += '\n'
     return '\n'.join([line.rstrip() for line in bill_string.strip().splitlines()])
 
 @app.route('/')
@@ -529,6 +442,7 @@ def today_totals():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/create_bill', methods=['POST'])
+@app.route('/create_bill', methods=['POST'])
 def create_bill():
     try:
         data = request.json
@@ -537,74 +451,87 @@ def create_bill():
         current_date = now.strftime('%d/%m/%Y')
         current_time = now.strftime('%H:%M:%S')
 
+        # totals
         total_items = sum(int(item['quantity']) for item in data['items'])
         total_unique_products = len(data['items'])
         subtotal = sum(float(item['retail_price']) * int(item['quantity']) for item in data['items'])
         total_savings = sum((float(item['mrp']) - float(item['retail_price'])) * int(item['quantity']) for item in data['items'])
         points_earned = int(subtotal // 100)
 
+        # customer handling
         customer = None
         old_balance = 0
         old_points = 0
-        if data['customer']['mobile']:
+        if data['customer'].get('mobile'):
             customer = get_customer(data['customer']['mobile'])
             if customer:
                 old_balance = customer['balance']
                 old_points = customer['points']
             else:
-                create_customer(data['customer']['mobile'], data['customer']['name'], data['customer']['address'])
+                create_customer(data['customer']['mobile'], data['customer']['name'], data['customer'].get('address', ''))
                 customer = get_customer(data['customer']['mobile'])
                 if customer:
                     old_balance = customer['balance']
                     old_points = customer['points']
 
-        new_debt = float(data['balance'].get('new_debt', 0))
-        settle_debt = float(data['balance'].get('settle_debt', 0))
+        new_debt = float(data.get('balance', {}).get('new_debt', 0))
+        settle_debt = float(data.get('balance', {}).get('settle_debt', 0))
         new_balance = old_balance + new_debt - settle_debt
 
-        cash_received = float(data['payment']['cash_received']) if data['payment']['cash_received'] else 0
+        cash_received = float(data.get('payment', {}).get('cash_received') or 0)
         cash_balance = cash_received - subtotal
         if cash_balance < 0:
             new_balance = new_balance + abs(cash_balance)
 
-        if data['customer']['mobile']:
-            customer_data = {'mobile': data['customer']['mobile'], 'name': data['customer']['name'], 'address': data['customer']['address'], 'points': old_points + points_earned, 'balance': new_balance}
+        if data['customer'].get('mobile'):
+            customer_data = {
+                'mobile': data['customer']['mobile'],
+                'name': data['customer']['name'],
+                'address': data['customer'].get('address', ''),
+                'points': old_points + points_earned,
+                'balance': new_balance
+            }
             update_customer(customer_data)
         else:
             customer_data = {'mobile': 'N/A', 'name': 'பதிவில்லா வாடிக்கையாளர்', 'address': '-', 'points': 0, 'balance': 0}
 
         bill_data = {
             'bill_number': bill_number,
-            'customer_mobile': data['customer']['mobile'] if data['customer']['mobile'] else 'N/A',
+            'customer_mobile': data['customer'].get('mobile') if data['customer'].get('mobile') else 'N/A',
             'date': current_date,
             'time': current_time,
             'total_items': total_items,
             'total_unique_products': total_unique_products,
             'subtotal': subtotal,
             'total_savings': total_savings,
-            'payment_type': data['payment']['payment_type'],
+            'payment_type': data.get('payment', {}).get('payment_type', 'CASH'),
             'cash_received': cash_received,
             'cash_balance': cash_balance,
             'old_balance': old_balance,
             'new_balance': new_balance,
-            'points_earned': points_earned if data['customer']['mobile'] else 0
+            'points_earned': points_earned if data['customer'].get('mobile') else 0
         }
 
         items_data = []
         for item in data['items']:
             display_name = item.get('tamil_name') or item.get('name') or ''
-            items_data.append({'bill_number': bill_number, 'product_name': display_name, 'quantity': item['quantity'], 'unit': item.get('unit', 'count'), 'mrp': item['mrp'], 'retail_price': item['retail_price'], 'total_price': float(item['retail_price']) * int(item['quantity'])})
+            items_data.append({
+                'bill_number': bill_number,
+                'product_name': display_name,
+                'quantity': item['quantity'],
+                'unit': item.get('unit', 'count'),
+                'mrp': item['mrp'],
+                'retail_price': item['retail_price'],
+                'total_price': float(item['retail_price']) * int(item['quantity'])
+            })
 
         if not save_bill(bill_data, items_data):
             return jsonify({'error': 'Failed to save bill'}), 500
 
         bill_string = generate_bill_string(bill_data, customer_data, items_data)
 
-                   # Printing: use printer HORZRES (printable width) and left-aligned layout
+        # Printing: Win32 hDC path (if available)
         try:
-            # printer_name = win32print.GetDefaultPrinter()
-            # hDC = win32ui.CreateDC()
-            # hDC.CreatePrinterDC(printer_name)
             printer_name = BILL_PRINTER_NAME
             hDC = win32ui.CreateDC()
             hDC.CreatePrinterDC(printer_name)
@@ -612,10 +539,38 @@ def create_bill():
             hDC.StartDoc("Supermarket Bill")
             hDC.StartPage()
 
-            # Fonts: bold for headings/names, normal for numbers/body
+            # Fonts (attempt bold + normal)
             bold_font = win32ui.CreateFont({"name": "Nirmala UI", "height": 16, "weight": 700})
             normal_font = win32ui.CreateFont({"name": "Nirmala UI", "height": 14, "weight": 400})
-            # default to normal for measurements & numbers
+
+            # Helper to measure with a chosen font
+            def px_width_with_font(s, font):
+                hDC.SelectObject(font)
+                return hDC.GetTextExtent(str(s))[0]
+
+            def px_height_with_font(font):
+                hDC.SelectObject(font)
+                return hDC.GetTextExtent("A")[1]
+
+            # Bold-draw helper: prefer font weight, fallback to 2-pass offset draw for emulated bold
+            def draw_bold_text(x, y, text, preferred_font, fallback_normal_font):
+                # Try preferred bold font first
+                hDC.SelectObject(preferred_font)
+                w_bold = hDC.GetTextExtent(text)[0]
+                # Measure with normal font too to detect if bold changed metrics (simple heuristic)
+                hDC.SelectObject(fallback_normal_font)
+                w_norm = hDC.GetTextExtent(text)[0]
+                # If bold font has same width as normal font, printer/font may ignore weight -> emulate
+                if w_bold == w_norm:
+                    # emulate bold by drawing twice (1px right)
+                    hDC.SelectObject(preferred_font)
+                    hDC.TextOut(x, y, text)
+                    hDC.TextOut(x + 1, y, text)
+                else:
+                    hDC.SelectObject(preferred_font)
+                    hDC.TextOut(x, y, text)
+
+            # default font to normal for measurements initially
             hDC.SelectObject(normal_font)
 
             def pixel_width(s):
@@ -624,13 +579,12 @@ def create_bill():
             def pixel_height(s='A'):
                 return hDC.GetTextExtent(str(s))[1]
 
-            # Use the printer's reported printable width when possible
+            # Get printable area in px
             try:
                 printable_width_px = hDC.GetDeviceCaps(win32con.HORZRES)
             except Exception:
                 printable_width_px = None
 
-            # fallback to DPI * inches if HORZRES isn't available
             if not printable_width_px or printable_width_px <= 0:
                 try:
                     dpi_x = hDC.GetDeviceCaps(win32con.LOGPIXELSX) or 203
@@ -639,12 +593,11 @@ def create_bill():
                 paper_cm = 7.5
                 printable_width_px = int(dpi_x * (paper_cm / 2.54))
 
-            # left/right margins (small)
             margin_px = max(8, int(0.03 * printable_width_px))
             x0 = margin_px
             content_px = max(120, printable_width_px - margin_px * 2)
 
-            # column distribution tuned for names + numbers on narrow paper (sum ~=1.0)
+            # Column widths in pixels (fractions of content area)
             pct = {'name': 0.50, 'qty': 0.10, 'mrp': 0.13, 'rate': 0.13, 'total': 0.14}
             name_px = int(content_px * pct['name'])
             qty_px = int(content_px * pct['qty'])
@@ -652,89 +605,91 @@ def create_bill():
             rate_px = int(content_px * pct['rate'])
             total_px = int(content_px * pct['total'])
 
+            # Compute right-edge coordinates from the far right (guarantees strict columns)
+            content_right = x0 + content_px  # far right pixel of content area
+            total_right = content_right
+            rate_right = total_right - total_px
+            mrp_right = rate_right - rate_px
+            qty_right = mrp_right - mrp_px
             name_x = x0
-            qty_right = name_x + name_px + qty_px
-            mrp_right = qty_right + mrp_px
-            rate_right = mrp_right + rate_px
-            total_right = rate_right + total_px
+            # name column width is name_px (from name_x to qty_right)
 
-            # separators based on character count (monospace approx)
-            zero_w = pixel_width('0') or 6
+            # separators
+            zero_w = px_width_with_font('0', normal_font) or 6
             sep_chars = max(10, content_px // zero_w)
             sep_line = '-' * sep_chars
-            sep_line2 = '_' * sep_chars
 
             y = 20
-            lh = pixel_height() + 6
+            lh = px_height_with_font(normal_font) + 6
 
-            # Header: bold supermarket name, normal for remaining header lines
-            hDC.SelectObject(bold_font)
-            hDC.TextOut(x0, y, "SRI VELAVAN SUPERMARKET")
+            # --- Header: center supermarket name and address ---
+            center_x = x0 + content_px // 2
+
+            # Title (bold)
+            title = "SRI VELAVAN SUPERMARKET"
+            # draw bold centered
+            title_x = center_x - (px_width_with_font(title, bold_font) // 2)
+            draw_bold_text(title_x, y, title, bold_font, normal_font)
             y += lh
-            hDC.SelectObject(normal_font)
+
+            # Address lines (normal)
             for hl in [
                 "2/136A, Pillaiyar Koil Street",
                 "A.Kottarakuppam, Virudhachalam",
                 "Ph: 9626475471  GST:33FLEPM3791Q1ZD",
             ]:
-                hDC.TextOut(x0, y, hl)
+                tx = center_x - (px_width_with_font(hl, normal_font) // 2)
+                hDC.SelectObject(normal_font)
+                hDC.TextOut(tx, y, hl)
                 y += lh
-            hDC.TextOut(x0, y, sep_line)
-            y += lh
 
-            # bill meta
-            hDC.TextOut(x0, y, f"பில் எண் : {bill_data['bill_number']}")
-            y += lh
-            hDC.TextOut(x0, y, f"தேதி     : {bill_data['date']} {bill_data['time']}")
-            y += lh
-            hDC.TextOut(x0, y, sep_line)
-            y += lh
-
-            # customer
-            hDC.TextOut(x0, y, "வாடிக்கையாளர்:")
-            y += lh
-            hDC.TextOut(x0, y, f"பெயர்    : {customer_data['name']}")
-            y += lh
-            if customer_data.get('mobile') and customer_data.get('mobile') != 'N/A':
-                hDC.TextOut(x0, y, f"மொபைல்  : {customer_data['mobile']}")
-                y += lh
-                hDC.TextOut(x0, y, f"புள்ளிகள்: {customer_data.get('points', 0)}")
-                y += lh
-            hDC.TextOut(x0, y, sep_line)
-            y += lh
-
-            # column headers (numbers right-aligned)
-            hDC.SelectObject(bold_font)
-            hDC.TextOut(name_x, y, "பொருள்")
+            # meta and separators (left-aligned)
             hDC.SelectObject(normal_font)
-            t = "அளவு"; w = pixel_width(t); hDC.TextOut(qty_right - w, y, t)
-            t = "MRP"; w = pixel_width(t); hDC.TextOut(mrp_right - w, y, t)
-            t = "விலை"; w = pixel_width(t); hDC.TextOut(rate_right - w, y, t)
-            t = "தொகை"; w = pixel_width(t); hDC.TextOut(total_right - w, y, t)
-            y += lh
-            hDC.TextOut(x0, y, sep_line)
-            y += lh
+            hDC.TextOut(x0, y, sep_line); y += lh
+            hDC.TextOut(x0, y, f"பில் எண் : {bill_data['bill_number']}"); y += lh
+            hDC.TextOut(x0, y, f"தேதி     : {bill_data['date']} {bill_data['time']}"); y += lh
+            hDC.TextOut(x0, y, sep_line); y += lh
 
-            # items
+            # customer block
+            hDC.TextOut(x0, y, "வாடிக்கையாளர்:"); y += lh
+            draw_bold_text(x0, y, f"பெயர்    : {customer_data['name']}", bold_font, normal_font); y += lh
+            if customer_data.get('mobile') and customer_data.get('mobile') != 'N/A':
+                hDC.SelectObject(normal_font)
+                hDC.TextOut(x0, y, f"மொபைல்  : {customer_data['mobile']}"); y += lh
+                hDC.TextOut(x0, y, f"புள்ளிகள்: {customer_data.get('points', 0)}"); y += lh
+            hDC.TextOut(x0, y, sep_line); y += lh
+
+            # column headers: product name at left, numbers right-aligned
+            draw_bold_text(name_x, y, "பொருள்", bold_font, normal_font)
+            # numbers headers measured with normal font
+            t = "அளவு"; hDC.SelectObject(normal_font); hDC.TextOut(qty_right - px_width_with_font(t, normal_font), y, t)
+            t = "MRP"; hDC.TextOut(mrp_right - px_width_with_font(t, normal_font), y, t)
+            t = "விலை"; hDC.TextOut(rate_right - px_width_with_font(t, normal_font), y, t)
+            t = "தொகை"; hDC.TextOut(total_right - px_width_with_font(t, normal_font), y, t)
+            y += lh
+            hDC.TextOut(x0, y, sep_line); y += lh
+
+            # items: draw product name bold (real or emulated), numbers right-aligned
             for item in items_data:
-                qty_text = str(int(item.get('quantity', 0))) if float(item.get('quantity', 0)).is_integer() else str(item.get('quantity'))
+                qty_text = str(int(item.get('quantity', 0))) if float(item.get('quantity', 0)).is_integer() else str(item.get('quantity', 0))
                 mrp_text = f"{float(item.get('mrp', 0)):.2f}"
                 rate_text = f"{float(item.get('retail_price', 0)):.2f}"
                 total_text = f"{float(item.get('total_price', 0)):.2f}"
 
-                # measure and wrap name using bold font so visual matches printed bold name
-                hDC.SelectObject(bold_font)
+                # Split/wrap name into lines that fit name_px
                 name_lines = split_text_to_pixel_width(str(item.get('product_name', '')), name_px, hDC, max_lines=2, ellipsis='...')
+
                 for idx, nl in enumerate(name_lines):
-                    hDC.TextOut(name_x, y, nl)
-                    # for the first name line, print the numeric columns aligned with normal font
+                    # draw bold product name in left column
+                    draw_bold_text(name_x, y, nl, bold_font, normal_font)
+
+                    # On first line print numbers aligned to the right edges
                     if idx == 0:
                         hDC.SelectObject(normal_font)
-                        w = pixel_width(qty_text); hDC.TextOut(qty_right - w, y, qty_text)
-                        w = pixel_width(mrp_text); hDC.TextOut(mrp_right - w, y, mrp_text)
-                        w = pixel_width(rate_text); hDC.TextOut(rate_right - w, y, rate_text)
-                        w = pixel_width(total_text); hDC.TextOut(total_right - w, y, total_text)
-                        hDC.SelectObject(bold_font)  # switch back for continuation lines (name)
+                        hDC.TextOut(qty_right - px_width_with_font(qty_text, normal_font), y, qty_text)
+                        hDC.TextOut(mrp_right - px_width_with_font(mrp_text, normal_font), y, mrp_text)
+                        hDC.TextOut(rate_right - px_width_with_font(rate_text, normal_font), y, rate_text)
+                        hDC.TextOut(total_right - px_width_with_font(total_text, normal_font), y, total_text)
                     y += lh
 
                 # separator after item
@@ -742,14 +697,14 @@ def create_bill():
                 hDC.TextOut(x0, y, sep_line)
                 y += lh
 
-            # footer
+            # footer totals (left aligned for labels)
             hDC.TextOut(x0, y, sep_line); y += lh
             hDC.TextOut(x0, y, f"மொத்த பொருட்கள் : {bill_data['total_unique_products']}"); y += lh
             hDC.TextOut(x0, y, f"மொத்த அளவு     : {bill_data['total_items']}"); y += lh
             hDC.TextOut(x0, y, f"மொத்தம்        : ₹{bill_data['subtotal']:.2f}"); y += lh
             hDC.TextOut(x0, y, f"சேமிப்பு       : ₹{bill_data['total_savings']:.2f}"); y += lh
 
-            if bill_data.get('customer_mobile') and bill_data.get('customer_mobile') != 'N/A':
+            if bill_data.get('customer_mobile') and bill_data['customer_mobile'] != 'N/A':
                 hDC.TextOut(x0, y, sep_line); y += lh
                 hDC.TextOut(x0, y, f"பழைய நிலுவை    : ₹{bill_data['old_balance']:.2f}"); y += lh
                 hDC.TextOut(x0, y, f"புதிய நிலுவை   : ₹{bill_data['new_balance']:.2f}"); y += lh
@@ -768,6 +723,7 @@ def create_bill():
             hDC.DeleteDC()
 
         except Exception as print_error:
+            # keep API success (we still return bill_string) but log print error
             print(f"Print error: {print_error}")
 
         return jsonify({'success': True, 'bill_number': bill_number, 'bill_string': bill_string, 'customer_data': customer_data})
