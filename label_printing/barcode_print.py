@@ -37,13 +37,16 @@ def print_image(image_path: str, title: str = "Label Print", printer_name: str =
     max_w, max_h = printable_area
 
     # Scale image proportionally to fit within printable area
-    ratio = min(max_w / img_w, max_h / img_h, 1.0)
-    target_w = int(img_w * ratio)
-    target_h = int(img_h * ratio)
+    # ratio = min(max_w / img_w, max_h / img_h, 1.0)
+    # target_w = int(img_w * ratio)
+    # target_h = int(img_h * ratio)
 
-    if img.mode != "RGB":
-        img = img.convert("RGB")
+    # if img.mode != "RGB":
+    #     img = img.convert("RGB")
+    # img = img.resize((target_w, target_h))
+    target_w, target_h = 256, 160  # 32x20mm at 203dpi
     img = img.resize((target_w, target_h))
+
 
     # Start printing
     hDC.StartDoc(title)

@@ -59,7 +59,19 @@
         .totals { background:#f8f9fa; padding:10px; border-radius:8px; margin-top:12px; }
         .totals .total-row { display:flex; justify-content:space-between; margin-bottom:6px; font-weight:600; font-size:13px; }
 
-        .bill-output { background:#1a202c; color:#e2e8f0; padding:15px; border-radius:8px; font-family:'Courier New', monospace; white-space: pre-wrap; max-height: 500px; overflow-y:auto; margin-top:15px; font-size:12px; line-height:1.3; }
+        .bill-output {
+            font-family: "Noto Sans Tamil", "Lohit Tamil", "Nirmala UI", "Courier New", monospace;
+            white-space: pre-wrap;
+            font-size: 18px;     /* bigger for preview */
+            font-weight: 700;    /* bold preview */
+            line-height: 1.45;
+            background:#1a202c;
+            color:#e2e8f0;
+            padding:15px;
+            border-radius:8px;
+            max-height:500px;
+            overflow-y:auto;
+        }
 
         .barcode-input { background:#fff7f7 !important; border:2px solid #ff4444 !important; font-weight:700; }
         @media (max-width:1200px) { .main-content { grid-template-columns: 1fr 1fr; gap:20px; } }
@@ -67,18 +79,8 @@
 
         /* small visual cue for editable row */
         .editing-row { background: #fffbe6 !important; }
-        .bill-output {
-            font-family: "Noto Sans Tamil", "Lohit Tamil", "Nirmala UI", "Courier New", monospace;
-            white-space: pre-wrap;
-            font-size: 12px;
-            line-height: 1.3;
-            background:#1a202c;
-            color:#e2e8f0;
-            padding:15px;
-            border-radius:8px;
-            max-height:500px;
-            overflow-y:auto;
-            }
+
+        
         #alerts {
         position: fixed;
         top: 0;
@@ -948,9 +950,60 @@ function updateItemsTable() {
             showAlert('பில் பிரிண்ட் அனுப்பப்பட்டது');
         }
 
-        function escapeHtml(text) {
-            return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        // escape helper
+        function escapeHtml(str) {
+        if (!str && str !== 0) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
         }
+
+        // Render the structured bill preview (pixel/column based - not char based)
+        function renderBillPreview(billData, customerData, itemsArray) {
+        const container = document.getElementById('billOutput');
+        // header block
+        let html = '';
+        html += `<div style="text-align:center; font-weight:900; font-size:20px; margin-bottom:6px;">SRI VELAVAN SUPERMARKET</div>`;
+        html += `<div style="text-align:center; font-weight:700; font-size:14px; margin-bottom:6px;">2/136A, Pillaiyar Koil Street — A.Kottarakuppam</div>`;
+        html += `<div style="text-align:center; font-weight:700; font-size:12px; margin-bottom:8px;">Ph: 9626475471  GST:33FLEPM3791Q1ZD</div>`;
+        html += `<div style="border-top:1px dashed #999; margin-bottom:8px;"></div>`;
+
+        html += `<div style="font-weight:900; margin-bottom:6px;">பில் எண் : ${escapeHtml(billData.bill_number || '')} &nbsp;&nbsp; தேதி : ${escapeHtml(billData.date || '')} ${escapeHtml(billData.time || '')}</div>`;
+
+        // table header
+        html += `<table class="bill-table" role="table" aria-label="Bill preview">`;
+        html += `<thead><tr><th>பொருள்</th><th>அளவு</th><th>MRP</th><th>விலை</th><th>தொகை</th></tr></thead><tbody>`;
+
+        // populate rows
+        itemsArray.forEach(it => {
+            // prefer tamil_name if present; fall back to english
+            const pname = escapeHtml(it.tamil_name || it.name || it.product_name || '');
+            const qty = escapeHtml(String(it.quantity || ''));
+            const mrp = escapeHtml(Number(it.mrp || it.mrp || it.retail_price || 0).toFixed(2));
+            const rate = escapeHtml(Number(it.retail_price || 0).toFixed(2));
+            const total = escapeHtml(Number(it.total || it.total_price || (it.quantity||0)* (it.retail_price||0)).toFixed(2));
+
+            // render as a single row (the cells are fixed-width by CSS)
+            html += `<tr>`;
+            html += `<td title="${pname}" style="text-align:left; font-weight:900;">${pname}</td>`;
+            html += `<td style="text-align:right; font-weight:900;">${qty}</td>`;
+            html += `<td style="text-align:right; font-weight:900;">${mrp}</td>`;
+            html += `<td style="text-align:right; font-weight:900;">${rate}</td>`;
+            html += `<td style="text-align:right; font-weight:900;">${total}</td>`;
+            html += `</tr>`;
+        });
+
+        html += `</tbody></table>`;
+
+        // totals footer
+        html += `<div class="bill-footer">மொத்த பொருட்கள்: ${escapeHtml(String(billData.total_unique_products || 0))} &nbsp;&nbsp; மொத்தம்: ₹${Number(billData.subtotal||0).toFixed(2)}</div>`;
+
+        container.innerHTML = html;
+        }
+
 
         function resetForm() {
             if (!confirm('படிவத்தை மீட்டமைக்க விரும்புகிறீர்களா?')) return;

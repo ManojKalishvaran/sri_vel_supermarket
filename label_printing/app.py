@@ -325,7 +325,7 @@ def compose_sheet(product: Dict[str, Any], count: int, store_name: str = STORE_N
     for r in range(rows):
         for c in range(LABELS_PER_ROW):
             if pasted >= count:
-                pasted += 1
+                # pasted += 1
                 continue
             x = margin_x + c * (LABEL_W + spacing) + global_x_offset
             y = margin_y + r * (LABEL_H + spacing) + global_y_offset
@@ -487,11 +487,11 @@ def api_print():
         return jsonify({"ok": False, "error": "barcode is required"}), 400
 
     # Enforce multiples of LABELS_PER_ROW
-    if count < LABELS_PER_ROW or (count % LABELS_PER_ROW) != 0:
-        return jsonify({
-            "ok": False,
-            "error": f"count must be a positive multiple of {LABELS_PER_ROW} (e.g. {LABELS_PER_ROW}, {LABELS_PER_ROW*2}, ...)"
-        }), 400
+    # if count < LABELS_PER_ROW or (count % LABELS_PER_ROW) != 0:
+    #     return jsonify({
+    #         "ok": False,
+    #         "error": f"count must be a positive multiple of {LABELS_PER_ROW} (e.g. {LABELS_PER_ROW}, {LABELS_PER_ROW*2}, ...)"
+    #     }), 400
 
     product = get_product_by_barcode(barcode)
     if not product:

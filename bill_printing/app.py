@@ -244,19 +244,51 @@ def wrap_text_to_max_lines(s, char_width, max_lines=2):
 #         lines.append('-' * width)
     
 #     return '\n'.join(lines)
+def truncate_text_to_pixel_width(text, max_px, font, hdc, ellipsis='...'):
+    """
+    Return a single-line string that fits into max_px pixels when drawn with `font`.
+    Adds ellipsis if truncated.
+    """
+    hdc.SelectObject(font)
+    # quick full-check
+    full_w = hdc.GetTextExtent(text)[0]
+    if full_w == max_px:
+        return text
+    elif full_w < max_px:
+        return text+ " "*(max_px - len(text))
+
+    # binary-search by chars for speed
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        candidate = text[:mid].rstrip()
+        w = hdc.GetTextExtent(candidate + ellipsis)[0]
+        if w <= max_px:
+            lo = mid + 1
+        else:
+            hi = mid
+    # lo is first too-large index, so keep lo-1
+    cut = max(0, lo - 1)
+    result = text[:cut].rstrip()
+    if not result:
+        # fallback: return ellipsis if nothing fits
+        return ellipsis if hdc.GetTextExtent(ellipsis)[0] <= max_px else ''
+    # ensure final check
+    while hdc.GetTextExtent(result + ellipsis)[0] > max_px and result:
+        result = result[:-1]
+    return (result + ellipsis) if result and hdc.GetTextExtent(result + ellipsis)[0] <= max_px else result
+
 
 def format_thermal_bill(items, width=42, hDC=None):
     """
-    Layout: product name at left (ljust), numeric columns right-aligned.
-    This is the safe character-based fallback used for preview strings.
-    If hDC is provided, the other pixel-accurate branch is used elsewhere.
+    Character fallback: single-line product name truncated to name_w chars (ellipsis).
+    Numbers are strictly right-aligned so columns are consistent across rows.
     """
-    # column widths in characters (tuned for narrow receipt)
-    name_w = 24   # product name column (left)
-    qty_w = 6     # quantity (right)
-    mrp_w = 8     # mrp (right)
-    rate_w = 8    # retail price (right)
-    tot_w = 8     # total (right)
+    name_w = 20   # product name column (left) - tweak if needed
+    qty_w = 6
+    mrp_w = 8
+    rate_w = 8
+    tot_w = 8
 
     header = (
         f"{'பொருள்'.ljust(name_w)}"
@@ -269,29 +301,26 @@ def format_thermal_bill(items, width=42, hDC=None):
     lines = ['-' * width, header, '-' * width]
 
     for item in items:
-        # numeric strings
         qty = str(int(item.get('quantity', 0))) if float(item.get('quantity', 0)).is_integer() else str(item.get('quantity', 0))
         mrp_val = f"{float(item.get('mrp', 0)):.2f}"
         rate_val = f"{float(item.get('retail_price', 0)):.2f}"
         total_val = f"{float(item.get('total_price', 0)):.2f}"
 
-        # Wrap product name (2 lines max)
-        name_lines = wrap_text_to_max_lines(str(item.get('product_name', '')), name_w, max_lines=2)
+        # Truncate name to single line of name_w characters
+        raw_name = str(item.get('product_name', ''))
+        if len(raw_name) > name_w:
+            name_display = ellipsize_line_by_chars(raw_name, name_w)
+        else:
+            name_display = raw_name
 
-        # First line: product name left, numbers right
-        first_line = (
-            f"{name_lines[0].ljust(name_w)}"
+        line = (
+            f"{name_display.ljust(name_w)}"
             f"{qty.rjust(qty_w)}"
             f"{mrp_val.rjust(mrp_w)}"
             f"{rate_val.rjust(rate_w)}"
             f"{total_val.rjust(tot_w)}"
         )
-        lines.append(first_line)
-
-        # Continuation lines: only product name left (numbers already printed)
-        for cont in name_lines[1:]:
-            lines.append(cont.ljust(name_w))
-
+        lines.append(line)
         lines.append('-' * width)
 
     return '\n'.join(lines)
@@ -361,6 +390,441 @@ def generate_bill_string(bill_data, customer_data, items_data):
     bill_string += "     நன்றி! மீண்டும் வாருங்கள்!\n"
     bill_string += '\n'
     return '\n'.join([line.rstrip() for line in bill_string.strip().splitlines()])
+
+def print_bill_strong(bill_data, items_data, customer_data, printer_name):
+    """
+    Pixel-precise, large & bold printing for Tamil + numeric columns.
+    Call: print_bill_strong(bill_data, items_data, customer_data, BILL_PRINTER_NAME)
+    """
+    # Uses win32ui / win32con which are already imported at top of file.
+    # Keep errors local to avoid breaking bill saving.
+    try:
+        hDC = win32ui.CreateDC()
+        hDC.CreatePrinterDC(printer_name)
+
+        hDC.StartDoc("Supermarket Bill")
+        hDC.StartPage()
+
+        # Choose Tamil-capable fonts. Increase heights to make text very big.
+        # If Noto Sans Tamil installed, replace "Nirmala UI" with "Noto Sans Tamil".
+        header_font = win32ui.CreateFont({"name": "Nirmala UI", "height": 48, "weight": 900})
+        bold_font   = win32ui.CreateFont({"name": "Nirmala UI", "height": 42, "weight": 900})
+        normal_font = win32ui.CreateFont({"name": "Nirmala UI", "height": 40, "weight": 900})
+
+        # small helpers
+        def measure_px(s, font):
+            hDC.SelectObject(font)
+            return hDC.GetTextExtent(str(s))[0]
+
+        def line_h(font):
+            hDC.SelectObject(font)
+            # use a Tamil glyph to estimate realistic height
+            return hDC.GetTextExtent("ப")[1] + 8
+
+        # strong draw: draw twice with 1px offset to force visible boldness
+        def draw_strong(x, y, text, font):
+            hDC.SelectObject(font)
+            # primary draw
+            hDC.TextOut(int(x), int(y), str(text))
+            # second draw offset to strengthen strokes
+            try:
+                hDC.TextOut(int(x) + 1, int(y), str(text))
+                # small vertical offset also helps on some printers:
+                hDC.TextOut(int(x), int(y) + 1, str(text))
+            except Exception:
+                pass
+
+        # pad/truncate by pixel width using NBSP (guarantees next column starts at fixed X)
+        def fit_and_pad(text, px_target, font, ellipsis='...'):
+            hDC.SelectObject(font)
+            txt = str(text)
+            if measure_px(txt, font) <= px_target:
+                out = txt
+                nb = '\u00A0'
+                # append NBSP until visually >= px_target (safeguarded loop)
+                tries = 0
+                while measure_px(out, font) < px_target and tries < 500:
+                    out += nb
+                    tries += 1
+                return out
+            # binary search for longest prefix that fits with ellipsis
+            lo, hi, best = 0, len(txt), ''
+            while lo < hi:
+                mid = (lo + hi) // 2
+                cand = txt[:mid].rstrip() + ellipsis
+                if measure_px(cand, font) <= px_target:
+                    best = cand
+                    lo = mid + 1
+                else:
+                    hi = mid
+            return best if best else (ellipsis if measure_px(ellipsis, font) <= px_target else '')
+
+        # split name into up to two lines constrained by pixel width
+        def split_name_lines(raw_text, px_target, font, max_lines=2, ellipsis='...'):
+            raw = str(raw_text)
+            lines = []
+            cur = ''
+            for ch in raw:
+                if measure_px(cur + ch, font) <= px_target:
+                    cur += ch
+                else:
+                    lines.append(cur)
+                    cur = ch
+                    if len(lines) >= max_lines:
+                        break
+            if cur and len(lines) < max_lines:
+                lines.append(cur)
+            if not lines:
+                lines = ['']
+            # if unconsumed characters exist, ellipsize last line to fit
+            consumed_len = sum(len(l) for l in lines)
+            if consumed_len < len(raw):
+                last = lines[-1]
+                # trim last until it fits with ellipsis
+                while last and measure_px(last + ellipsis, font) > px_target:
+                    last = last[:-1]
+                lines[-1] = (last + ellipsis) if last else ellipsis
+            # pad each line to exact pixel width using NBSP
+            nb = '\u00A0'
+            for i in range(len(lines)):
+                tries = 0
+                while measure_px(lines[i] + nb, font) <= px_target and tries < 500:
+                    lines[i] += nb
+                    tries += 1
+                # ensure at least close to px_target; rare case add one more NBSP
+                if measure_px(lines[i], font) < px_target:
+                    lines[i] += nb
+            # ensure length == max_lines by appending empty padded strings if needed
+            while len(lines) < max_lines:
+                lines.append('') 
+            return lines[:max_lines]
+
+        # compute printable width (dpi-aware)
+        try:
+            printable_width_px = hDC.GetDeviceCaps(win32con.HORZRES)
+        except Exception:
+            dpi_x = hDC.GetDeviceCaps(win32con.LOGPIXELSX) or 203
+            paper_cm = 7.5
+            printable_width_px = int(dpi_x * (paper_cm / 2.54))
+
+        margin = max(8, int(0.03 * printable_width_px))
+        x0 = margin
+        content_px = max(200, printable_width_px - margin * 2)
+
+        # column pixel allocation: name gets most of the space
+        name_px  = int(content_px * 0.56)
+        qty_px   = int(content_px * 0.10)
+        mrp_px   = int(content_px * 0.10)
+        rate_px  = int(content_px * 0.12)
+        total_px = content_px - (name_px + qty_px + mrp_px + rate_px)
+
+        # column start Xs
+        name_x  = x0
+        qty_x   = name_x + name_px
+        mrp_x   = qty_x + qty_px
+        rate_x  = mrp_x + mrp_px
+        total_x = rate_x + rate_px
+
+        # right anchors for numeric columns (slightly inset)
+        qty_right   = qty_x + qty_px - 4
+        mrp_right   = mrp_x + mrp_px - 4
+        rate_right  = rate_x + rate_px - 4
+        total_right = total_x + total_px - 4
+
+        # vertical layout
+        y = 20
+        lh = line_h(normal_font)
+
+        # header center
+        title = "SRI VELAVAN SUPERMARKET"
+        center_x = x0 + content_px // 2
+        title_x = center_x - (measure_px(title, header_font) // 2)
+        draw_strong(title_x, y, title, header_font)
+        y += lh
+        for line in ["2/136A, Pillaiyar Koil Street", "A.Kottarakuppam, Virudhachalam", "Ph: 9626475471  GST:33FLEPM3791Q1ZD"]:
+            draw_strong(center_x - (measure_px(line, bold_font) // 2), y, line, bold_font)
+            y += lh
+
+        # separator
+        zero_w = measure_px('0', normal_font) or 6
+        sep_chars = max(12, content_px // zero_w)
+        sep_line = '-' * sep_chars
+        draw_strong(x0, y, sep_line, normal_font); y += lh
+
+        # meta info
+        draw_strong(x0, y, f"பில் எண் : {bill_data.get('bill_number','')}", normal_font); y += lh
+        draw_strong(x0, y, f"தேதி     : {bill_data.get('date','')} {bill_data.get('time','')}", normal_font); y += lh
+        draw_strong(x0, y, sep_line, normal_font); y += lh
+
+        # column headers (pad name column)
+        draw_strong(name_x, y, fit_and_pad("பொருள்", name_px, bold_font), bold_font)
+        # right aligned column titles
+        draw_strong(qty_right - measure_px("அளவு", bold_font), y, "அளவு", bold_font)
+        draw_strong(mrp_right - measure_px("MRP", bold_font), y, "MRP", bold_font)
+        draw_strong(rate_right - measure_px("விலை", bold_font), y, "விலை", bold_font)
+        draw_strong(total_right - measure_px("தொகை", bold_font), y, "தொகை", bold_font)
+        y += lh
+        draw_strong(x0, y, sep_line, normal_font); y += lh
+
+        # items
+        for it in items_data:
+            pname = it.get('product_name','') or ''
+            qty = it.get('quantity', 0)
+            qty_s = str(int(qty) if float(qty).is_integer() else qty)
+            mrp_s = f"{float(it.get('mrp',0)):.2f}"
+            rate_s = f"{float(it.get('retail_price',0)):.2f}"
+            tot_s = f"{float(it.get('total_price',0)):.2f}"
+
+            name_lines = split_name_lines(pname, name_px, normal_font, max_lines=2)
+            # first line: name + right-aligned numbers
+            draw_strong(name_x, y, name_lines[0], normal_font)
+            draw_strong(qty_right - measure_px(qty_s, normal_font), y, qty_s, normal_font)
+            draw_strong(mrp_right - measure_px(mrp_s, normal_font), y, mrp_s, normal_font)
+            draw_strong(rate_right - measure_px(rate_s, normal_font), y, rate_s, normal_font)
+            draw_strong(total_right - measure_px(tot_s, normal_font), y, tot_s, normal_font)
+            y += lh
+
+            # optional second name line
+            if name_lines[1].strip():
+                draw_strong(name_x, y, name_lines[1], normal_font)
+                y += lh
+
+            draw_strong(x0, y, sep_line, normal_font); y += lh
+
+        # footer totals
+        draw_strong(x0, y, sep_line, normal_font); y += lh
+        draw_strong(x0, y, f"மொத்த பொருட்கள் : {bill_data.get('total_unique_products',0)}", bold_font); y += lh
+        draw_strong(x0, y, f"மொத்தம்        : ₹{float(bill_data.get('subtotal',0)):.2f}", bold_font); y += lh
+        draw_strong(x0, y, f"சேமிப்பு       : ₹{float(bill_data.get('total_savings',0)):.2f}", bold_font); y += lh
+
+        # customer-specific balances if present
+        if bill_data.get('customer_mobile') and bill_data.get('customer_mobile') != 'N/A':
+            draw_strong(x0, y, sep_line, normal_font); y += lh
+            draw_strong(x0, y, f"பழைய நிலுவை    : ₹{float(bill_data.get('old_balance',0)):.2f}", normal_font); y += lh
+            draw_strong(x0, y, f"புதிய நிலுவை   : ₹{float(bill_data.get('new_balance',0)):.2f}", normal_font); y += lh
+
+        draw_strong(x0, y, sep_line, normal_font); y += lh
+        draw_strong(x0 + 12, y, "நன்றி! மீண்டும் வாருங்கள்!", bold_font); y += lh
+
+        # finalize
+        hDC.EndPage()
+        hDC.EndDoc()
+        try:
+            hDC.DeleteDC()
+        except Exception:
+            pass
+
+    except Exception as e:
+        # bubble error to caller via exception (or print it locally)
+        raise
+
+# requires: pip install pillow
+from PIL import Image, ImageDraw, ImageFont, ImageWin
+import math
+
+def print_bill_image(bill_data, items_data, customer_data, printer_name, font_path=None):
+    """
+    Renders the bill into a raster image (PIL) and prints it to the given Windows printer.
+    - printer_name: exact Windows printer name (e.g. 'RETSOL RTP 82UE')
+    - font_path: path to a Tamil-capable TTF (e.g. 'C:/Windows/Fonts/NotoSansTamil-Regular.ttf').
+                 If None, the system default will be tried (may fail for Tamil).
+    """
+    try:
+        # --- Create DC and get device metrics ---
+        hDC = win32ui.CreateDC()
+        hDC.CreatePrinterDC(printer_name)
+
+        # get DPI and printable area (pixels)
+        LOGPIXELSX = win32con.LOGPIXELSX
+        LOGPIXELSY = win32con.LOGPIXELSY
+        HORZRES = win32con.HORZRES
+        VERTRES = win32con.VERTRES
+
+        dpi_x = hDC.GetDeviceCaps(LOGPIXELSX) or 203
+        dpi_y = hDC.GetDeviceCaps(LOGPIXELSY) or dpi_x
+        printable_w = hDC.GetDeviceCaps(HORZRES) or int(dpi_x * (7.2/2.54))  # fallback width ~7.2 cm
+        # height we will allocate dynamically based on content
+        margin_px = max(8, int(0.03 * printable_w))
+        content_w = printable_w - margin_px * 2
+
+        # --- Fonts: pick sizes relative to DPI ---
+        # prefer a Tamil-capable font (Noto Sans Tamil recommended). Adjust sizes to taste.
+        if font_path is None:
+            # try common Windows Tamil font fallback - better to supply NotoSansTamil path
+            font_path = r"C:\Windows\Fonts\Nirmala.ttf"  # fallback
+        # base sizes scaled by DPI/96
+        scale = dpi_x / 96.0
+        title_size = int(22 * scale)
+        header_size = int(16 * scale)
+        normal_size = int(14 * scale)
+        small_size = int(12 * scale)
+
+        title_font = ImageFont.truetype(font_path, title_size)
+        header_font = ImageFont.truetype(font_path, header_size)
+        normal_font = ImageFont.truetype(font_path, normal_size)
+        small_font = ImageFont.truetype(font_path, small_size)
+
+        # --- Build text lines and estimate height ---
+        # column allocation (percent of content width) — tweak if needed
+        name_px  = int(content_w * 0.56)
+        qty_px   = int(content_w * 0.10)
+        mrp_px   = int(content_w * 0.10)
+        rate_px  = int(content_w * 0.12)
+        total_px = content_w - (name_px + qty_px + mrp_px + rate_px)
+
+        # helper to split text into up to n lines that fit px width
+        def split_to_lines(text, font, max_px, max_lines=2, ellipsis='...'):
+            lines = []
+            cur = ''
+            for ch in text:
+                w = font.getsize(cur + ch)[0]
+                if w <= max_px:
+                    cur += ch
+                else:
+                    lines.append(cur)
+                    cur = ch
+                    if len(lines) >= max_lines:
+                        break
+            if cur and len(lines) < max_lines:
+                lines.append(cur)
+            # if text not fully consumed, ellipsize last line
+            consumed = ''.join(lines)
+            if len(consumed) < len(text):
+                last = lines[-1] if lines else ''
+                # trim last until fits with ellipsis
+                while last and font.getsize(last + ellipsis)[0] > max_px:
+                    last = last[:-1]
+                lines[-1] = (last + ellipsis) if last else ellipsis
+            # ensure length == max_lines
+            while len(lines) < max_lines:
+                lines.append('')
+            return lines[:max_lines]
+
+        # build content height estimate
+        line_height = max(normal_font.getsize("ப")[1], header_font.getsize("ப")[1]) + int(4 * scale)
+        prelim_lines = 8  # header + separators estimate
+        for it in items_data:
+            pname = str(it.get('product_name', '') or '')
+            name_lines = split_to_lines(pname, normal_font, name_px, max_lines=2)
+            prelim_lines += len([l for l in name_lines if l.strip()]) or 1
+            prelim_lines += 1  # numeric row or separator
+
+        estimated_h = margin_px*2 + prelim_lines * line_height + 300  # add footer safety margin
+        # create white image
+        img = Image.new("RGB", (printable_w, estimated_h), "white")
+        draw = ImageDraw.Draw(img)
+
+        # vertical cursor
+        y = margin_px
+
+        # draw centered title block
+        title = "SRI VELAVAN SUPERMARKET"
+        w_title = draw.textsize(title, font=title_font)[0]
+        draw.text(((printable_w - w_title)//2, y), title, font=title_font, fill="black")
+        y += title_font.getsize(title)[1] + int(6*scale)
+
+        for line in ["2/136A, Pillaiyar Koil Street", "A.Kottarakuppam, Virudhachalam", "Ph: 9626475471  GST:33FLEPM3791Q1ZD"]:
+            w_line = draw.textsize(line, font=header_font)[0]
+            draw.text(((printable_w - w_line)//2, y), line, font=header_font, fill="black")
+            y += header_font.getsize(line)[1] + int(2*scale)
+
+        # separator
+        draw.line((margin_px, y, printable_w - margin_px, y), fill="black")
+        y += int(6*scale)
+
+        # meta
+        meta1 = f"பில் எண் : {bill_data.get('bill_number','')}"
+        meta2 = f"தேதி     : {bill_data.get('date','')} {bill_data.get('time','')}"
+        draw.text((margin_px, y), meta1, font=normal_font, fill="black")
+        y += normal_font.getsize(meta1)[1] + int(2*scale)
+        draw.text((margin_px, y), meta2, font=normal_font, fill="black")
+        y += normal_font.getsize(meta2)[1] + int(6*scale)
+
+        # table header
+        # draw header titles aligned to their columns; numbers right aligned
+        def draw_right(text, right_x, top_y, font):
+            w = draw.textsize(text, font=font)[0]
+            draw.text((right_x - w, top_y), text, font=font, fill="black")
+
+        draw.text((margin_px, y), "பொருள்", font=header_font, fill="black")
+        draw_right("அளவு", margin_px + name_px + qty_px - 4, y, header_font)
+        draw_right("MRP", margin_px + name_px + qty_px + mrp_px - 4, y, header_font)
+        draw_right("விலை", margin_px + name_px + qty_px + mrp_px + rate_px - 4, y, header_font)
+        draw_right("தொகை", margin_px + name_px + qty_px + mrp_px + rate_px + total_px - 4, y, header_font)
+        y += header_font.getsize("அ")[1] + int(6*scale)
+        draw.line((margin_px, y, printable_w - margin_px, y), fill="black")
+        y += int(4*scale)
+
+        # items
+        for it in items_data:
+            pname = str(it.get('product_name','') or '')
+            qty = str(int(it.get('quantity',0)) if float(it.get('quantity',0)).is_integer() else it.get('quantity',0))
+            mrp = f"{float(it.get('mrp',0)):.2f}"
+            rate = f"{float(it.get('retail_price',0)):.2f}"
+            tot = f"{float(it.get('total_price',0)):.2f}"
+            name_lines = split_to_lines(pname, normal_font, name_px, max_lines=2)
+            # first line: draw name and numbers
+            draw.text((margin_px, y), name_lines[0], font=normal_font, fill="black")
+            draw_right(qty, margin_px + name_px + qty_px - 4, y, normal_font)
+            draw_right(mrp, margin_px + name_px + qty_px + mrp_px - 4, y, normal_font)
+            draw_right(rate, margin_px + name_px + qty_px + mrp_px + rate_px - 4, y, normal_font)
+            draw_right(tot, margin_px + name_px + qty_px + mrp_px + rate_px + total_px - 4, y, normal_font)
+            y += line_height
+
+            # possible second line of product name
+            if name_lines[1].strip():
+                draw.text((margin_px, y), name_lines[1], font=normal_font, fill="black")
+                y += line_height
+
+            # small separator
+            draw.line((margin_px, y, printable_w - margin_px, y), fill="black")
+            y += int(4*scale)
+
+        # footer totals
+        y += int(6*scale)
+        draw.line((margin_px, y, printable_w - margin_px, y), fill="black")
+        y += int(6*scale)
+        totals = [
+            f"மொத்த பொருட்கள் : {bill_data.get('total_unique_products',0)}",
+            f"மொத்தம்        : ₹{float(bill_data.get('subtotal',0)):.2f}",
+            f"சேமிப்பு       : ₹{float(bill_data.get('total_savings',0)):.2f}"
+        ]
+        for t in totals:
+            draw.text((margin_px, y), t, font=header_font, fill="black")
+            y += header_font.getsize(t)[1] + int(4*scale)
+
+        if bill_data.get('customer_mobile') and bill_data.get('customer_mobile') != 'N/A':
+            draw.text((margin_px, y), f"பழைய நிலுவை    : ₹{float(bill_data.get('old_balance',0)):.2f}", font=normal_font, fill="black")
+            y += normal_font.getsize("ப")[1] + int(2*scale)
+            draw.text((margin_px, y), f"புதிய நிலுவை   : ₹{float(bill_data.get('new_balance',0)):.2f}", font=normal_font, fill="black")
+            y += normal_font.getsize("ப")[1] + int(4*scale)
+
+        draw.text((margin_px, y), "நன்றி! மீண்டும் வாருங்கள்!", font=header_font, fill="black")
+        y += header_font.getsize("ப")[1] + int(6*scale)
+
+        # crop to actual content height
+        final_h = min(img.height, max(margin_px*2 + 50, int(y + margin_px)))
+        img = img.crop((0, 0, printable_w, final_h))
+
+        # --- Send image to printer using Win32 DC + ImageWin.Dib ---
+        hDC.StartDoc("Supermarket Bill (image)")
+        hDC.StartPage()
+
+        dib = ImageWin.Dib(img)
+        # Draw the image top-left at (0,0) in device coordinates
+        dib.draw(hDC.GetHandleOutput(), (0, 0, printable_w, final_h))
+
+        hDC.EndPage()
+        hDC.EndDoc()
+        try:
+            hDC.DeleteDC()
+        except Exception:
+            pass
+
+    except Exception as e:
+        # Re-raise so caller (route) can log/fallback
+        raise
+
 
 @app.route('/')
 def index():
@@ -441,6 +905,7 @@ def today_totals():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/create_bill', methods=['POST'])
 @app.route('/create_bill', methods=['POST'])
 def create_bill():
@@ -451,11 +916,11 @@ def create_bill():
         current_date = now.strftime('%d/%m/%Y')
         current_time = now.strftime('%H:%M:%S')
 
-        # totals
-        total_items = sum(int(item['quantity']) for item in data['items'])
+        # totals (robust conversions)
+        total_items = sum(int(float(item.get('quantity', 0))) for item in data['items'])
         total_unique_products = len(data['items'])
-        subtotal = sum(float(item['retail_price']) * int(item['quantity']) for item in data['items'])
-        total_savings = sum((float(item['mrp']) - float(item['retail_price'])) * int(item['quantity']) for item in data['items'])
+        subtotal = sum(float(item.get('retail_price', 0)) * float(item.get('quantity', 0)) for item in data['items'])
+        total_savings = sum((float(item.get('mrp', 0)) - float(item.get('retail_price', 0))) * float(item.get('quantity', 0)) for item in data['items'])
         points_earned = int(subtotal // 100)
 
         # customer handling
@@ -474,8 +939,8 @@ def create_bill():
                     old_balance = customer['balance']
                     old_points = customer['points']
 
-        new_debt = float(data.get('balance', {}).get('new_debt', 0))
-        settle_debt = float(data.get('balance', {}).get('settle_debt', 0))
+        new_debt = float(data.get('balance', {}).get('new_debt', 0) or 0)
+        settle_debt = float(data.get('balance', {}).get('settle_debt', 0) or 0)
         new_balance = old_balance + new_debt - settle_debt
 
         cash_received = float(data.get('payment', {}).get('cash_received') or 0)
@@ -515,14 +980,15 @@ def create_bill():
         items_data = []
         for item in data['items']:
             display_name = item.get('tamil_name') or item.get('name') or ''
+            qty = float(item.get('quantity', 0) or 0)
             items_data.append({
                 'bill_number': bill_number,
                 'product_name': display_name,
-                'quantity': item['quantity'],
+                'quantity': qty,
                 'unit': item.get('unit', 'count'),
-                'mrp': item['mrp'],
-                'retail_price': item['retail_price'],
-                'total_price': float(item['retail_price']) * int(item['quantity'])
+                'mrp': float(item.get('mrp', 0) or 0),
+                'retail_price': float(item.get('retail_price', 0) or 0),
+                'total_price': float(item.get('retail_price', 0) or 0) * qty
             })
 
         if not save_bill(bill_data, items_data):
@@ -530,205 +996,34 @@ def create_bill():
 
         bill_string = generate_bill_string(bill_data, customer_data, items_data)
 
-        # Printing: Win32 hDC path (if available)
+        # Printing section using Win32 DC with pixel-perfect columns
+                # Printing: try image-based raster print first (best for Tamil + exact alignment).
+        # If image printing fails, fall back to the Text/DC-based printer.
+        # Make sure BILL_FONT_PATH points to a Tamil-capable TTF (NotoSansTamil recommended).
         try:
-            printer_name = BILL_PRINTER_NAME
-            hDC = win32ui.CreateDC()
-            hDC.CreatePrinterDC(printer_name)
-
-            hDC.StartDoc("Supermarket Bill")
-            hDC.StartPage()
-
-            # Fonts (attempt bold + normal)
-            bold_font = win32ui.CreateFont({"name": "Nirmala UI", "height": 16, "weight": 700})
-            normal_font = win32ui.CreateFont({"name": "Nirmala UI", "height": 14, "weight": 400})
-
-            # Helper to measure with a chosen font
-            def px_width_with_font(s, font):
-                hDC.SelectObject(font)
-                return hDC.GetTextExtent(str(s))[0]
-
-            def px_height_with_font(font):
-                hDC.SelectObject(font)
-                return hDC.GetTextExtent("A")[1]
-
-            # Bold-draw helper: prefer font weight, fallback to 2-pass offset draw for emulated bold
-            def draw_bold_text(x, y, text, preferred_font, fallback_normal_font):
-                # Try preferred bold font first
-                hDC.SelectObject(preferred_font)
-                w_bold = hDC.GetTextExtent(text)[0]
-                # Measure with normal font too to detect if bold changed metrics (simple heuristic)
-                hDC.SelectObject(fallback_normal_font)
-                w_norm = hDC.GetTextExtent(text)[0]
-                # If bold font has same width as normal font, printer/font may ignore weight -> emulate
-                if w_bold == w_norm:
-                    # emulate bold by drawing twice (1px right)
-                    hDC.SelectObject(preferred_font)
-                    hDC.TextOut(x, y, text)
-                    hDC.TextOut(x + 1, y, text)
-                else:
-                    hDC.SelectObject(preferred_font)
-                    hDC.TextOut(x, y, text)
-
-            # default font to normal for measurements initially
-            hDC.SelectObject(normal_font)
-
-            def pixel_width(s):
-                return hDC.GetTextExtent(str(s))[0]
-
-            def pixel_height(s='A'):
-                return hDC.GetTextExtent(str(s))[1]
-
-            # Get printable area in px
+            print_bill_image(
+                bill_data=bill_data,
+                items_data=items_data,
+                customer_data=customer_data,
+                printer_name=BILL_PRINTER_NAME,
+                font_path=os.environ.get('BILL_FONT_PATH', r"Fonts\nirmala-ui-bold.ttf")
+            )
+            print("Printed bill (image) to", BILL_PRINTER_NAME)
+        except Exception as e_img:
+            print("Image print failed:", e_img)
+            # Fallback to text-DC strong printer (existing implementation)
             try:
-                printable_width_px = hDC.GetDeviceCaps(win32con.HORZRES)
-            except Exception:
-                printable_width_px = None
+                print_bill_strong(bill_data, items_data, customer_data, BILL_PRINTER_NAME)
+                print("Printed bill (text/DC) to", BILL_PRINTER_NAME)
+            except Exception as e_txt:
+                print("Fallback text/DC print failed:", e_txt)
 
-            if not printable_width_px or printable_width_px <= 0:
-                try:
-                    dpi_x = hDC.GetDeviceCaps(win32con.LOGPIXELSX) or 203
-                except Exception:
-                    dpi_x = 203
-                paper_cm = 7.5
-                printable_width_px = int(dpi_x * (paper_cm / 2.54))
 
-            margin_px = max(8, int(0.03 * printable_width_px))
-            x0 = margin_px
-            content_px = max(120, printable_width_px - margin_px * 2)
-
-            # Column widths in pixels (fractions of content area)
-            pct = {'name': 0.50, 'qty': 0.10, 'mrp': 0.13, 'rate': 0.13, 'total': 0.14}
-            name_px = int(content_px * pct['name'])
-            qty_px = int(content_px * pct['qty'])
-            mrp_px = int(content_px * pct['mrp'])
-            rate_px = int(content_px * pct['rate'])
-            total_px = int(content_px * pct['total'])
-
-            # Compute right-edge coordinates from the far right (guarantees strict columns)
-            content_right = x0 + content_px  # far right pixel of content area
-            total_right = content_right
-            rate_right = total_right - total_px
-            mrp_right = rate_right - rate_px
-            qty_right = mrp_right - mrp_px
-            name_x = x0
-            # name column width is name_px (from name_x to qty_right)
-
-            # separators
-            zero_w = px_width_with_font('0', normal_font) or 6
-            sep_chars = max(10, content_px // zero_w)
-            sep_line = '-' * sep_chars
-
-            y = 20
-            lh = px_height_with_font(normal_font) + 6
-
-            # --- Header: center supermarket name and address ---
-            center_x = x0 + content_px // 2
-
-            # Title (bold)
-            title = "SRI VELAVAN SUPERMARKET"
-            # draw bold centered
-            title_x = center_x - (px_width_with_font(title, bold_font) // 2)
-            draw_bold_text(title_x, y, title, bold_font, normal_font)
-            y += lh
-
-            # Address lines (normal)
-            for hl in [
-                "2/136A, Pillaiyar Koil Street",
-                "A.Kottarakuppam, Virudhachalam",
-                "Ph: 9626475471  GST:33FLEPM3791Q1ZD",
-            ]:
-                tx = center_x - (px_width_with_font(hl, normal_font) // 2)
-                hDC.SelectObject(normal_font)
-                hDC.TextOut(tx, y, hl)
-                y += lh
-
-            # meta and separators (left-aligned)
-            hDC.SelectObject(normal_font)
-            hDC.TextOut(x0, y, sep_line); y += lh
-            hDC.TextOut(x0, y, f"பில் எண் : {bill_data['bill_number']}"); y += lh
-            hDC.TextOut(x0, y, f"தேதி     : {bill_data['date']} {bill_data['time']}"); y += lh
-            hDC.TextOut(x0, y, sep_line); y += lh
-
-            # customer block
-            hDC.TextOut(x0, y, "வாடிக்கையாளர்:"); y += lh
-            draw_bold_text(x0, y, f"பெயர்    : {customer_data['name']}", bold_font, normal_font); y += lh
-            if customer_data.get('mobile') and customer_data.get('mobile') != 'N/A':
-                hDC.SelectObject(normal_font)
-                hDC.TextOut(x0, y, f"மொபைல்  : {customer_data['mobile']}"); y += lh
-                hDC.TextOut(x0, y, f"புள்ளிகள்: {customer_data.get('points', 0)}"); y += lh
-            hDC.TextOut(x0, y, sep_line); y += lh
-
-            # column headers: product name at left, numbers right-aligned
-            draw_bold_text(name_x, y, "பொருள்", bold_font, normal_font)
-            # numbers headers measured with normal font
-            t = "அளவு"; hDC.SelectObject(normal_font); hDC.TextOut(qty_right - px_width_with_font(t, normal_font), y, t)
-            t = "MRP"; hDC.TextOut(mrp_right - px_width_with_font(t, normal_font), y, t)
-            t = "விலை"; hDC.TextOut(rate_right - px_width_with_font(t, normal_font), y, t)
-            t = "தொகை"; hDC.TextOut(total_right - px_width_with_font(t, normal_font), y, t)
-            y += lh
-            hDC.TextOut(x0, y, sep_line); y += lh
-
-            # items: draw product name bold (real or emulated), numbers right-aligned
-            for item in items_data:
-                qty_text = str(int(item.get('quantity', 0))) if float(item.get('quantity', 0)).is_integer() else str(item.get('quantity', 0))
-                mrp_text = f"{float(item.get('mrp', 0)):.2f}"
-                rate_text = f"{float(item.get('retail_price', 0)):.2f}"
-                total_text = f"{float(item.get('total_price', 0)):.2f}"
-
-                # Split/wrap name into lines that fit name_px
-                name_lines = split_text_to_pixel_width(str(item.get('product_name', '')), name_px, hDC, max_lines=2, ellipsis='...')
-
-                for idx, nl in enumerate(name_lines):
-                    # draw bold product name in left column
-                    draw_bold_text(name_x, y, nl, bold_font, normal_font)
-
-                    # On first line print numbers aligned to the right edges
-                    if idx == 0:
-                        hDC.SelectObject(normal_font)
-                        hDC.TextOut(qty_right - px_width_with_font(qty_text, normal_font), y, qty_text)
-                        hDC.TextOut(mrp_right - px_width_with_font(mrp_text, normal_font), y, mrp_text)
-                        hDC.TextOut(rate_right - px_width_with_font(rate_text, normal_font), y, rate_text)
-                        hDC.TextOut(total_right - px_width_with_font(total_text, normal_font), y, total_text)
-                    y += lh
-
-                # separator after item
-                hDC.SelectObject(normal_font)
-                hDC.TextOut(x0, y, sep_line)
-                y += lh
-
-            # footer totals (left aligned for labels)
-            hDC.TextOut(x0, y, sep_line); y += lh
-            hDC.TextOut(x0, y, f"மொத்த பொருட்கள் : {bill_data['total_unique_products']}"); y += lh
-            hDC.TextOut(x0, y, f"மொத்த அளவு     : {bill_data['total_items']}"); y += lh
-            hDC.TextOut(x0, y, f"மொத்தம்        : ₹{bill_data['subtotal']:.2f}"); y += lh
-            hDC.TextOut(x0, y, f"சேமிப்பு       : ₹{bill_data['total_savings']:.2f}"); y += lh
-
-            if bill_data.get('customer_mobile') and bill_data['customer_mobile'] != 'N/A':
-                hDC.TextOut(x0, y, sep_line); y += lh
-                hDC.TextOut(x0, y, f"பழைய நிலுவை    : ₹{bill_data['old_balance']:.2f}"); y += lh
-                hDC.TextOut(x0, y, f"புதிய நிலுவை   : ₹{bill_data['new_balance']:.2f}"); y += lh
-
-            hDC.TextOut(x0, y, sep_line); y += lh
-            hDC.TextOut(x0, y, f"செலுத்தும் முறை: {bill_data['payment_type']}"); y += lh
-            hDC.TextOut(x0, y, f"பெற்றது       : ₹{bill_data['cash_received']:.2f}"); y += lh
-            hDC.TextOut(x0, y, f"திருப்பியது    : ₹{bill_data['cash_balance']:.2f}"); y += lh
-            hDC.TextOut(x0, y, sep_line); y += lh
-            hDC.TextOut(x0, y, f"சம்பாதித்த புள்ளிகள்: {bill_data['points_earned']}"); y += lh
-            hDC.TextOut(x0, y, sep_line); y += lh
-            hDC.TextOut(x0, y, "     நன்றி! மீண்டும் வாருங்கள்!"); y += lh
-
-            hDC.EndPage()
-            hDC.EndDoc()
-            hDC.DeleteDC()
-
-        except Exception as print_error:
-            # keep API success (we still return bill_string) but log print error
-            print(f"Print error: {print_error}")
 
         return jsonify({'success': True, 'bill_number': bill_number, 'bill_string': bill_string, 'customer_data': customer_data})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 # ---- Insert the following into app.py (after existing routes like /today_totals) ----
 
